@@ -12,7 +12,7 @@ import (
 // joinCmd represents the join command
 var joinCmd = &cobra.Command{
 	Use:   "join",
-	Short: "Joins a session",
+	Short: "A brief description of your command",
 	Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example:
 
