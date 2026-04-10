@@ -4,13 +4,28 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/NirajNair/syncdoc/internal/config"
 	"golang.ngrok.com/ngrok/v2"
 )
 
-const TOKEN = "3C7iNOiAPdB8rsxC5SZgaDO0tIf_7AXLx1wxoQndC87eb5J7Q"
+func getNgrokToken() (string, error) {
+	token, err := config.GetNgrokToken()
+	if err != nil {
+		return "", fmt.Errorf("Could not get Ngrok token: %w", err)
+	}
+	if token == "" {
+		return "", fmt.Errorf("Ngrok token not set. Run: syncdoc config set-ngrok-token <token>")
+	}
+	return token, nil
+}
 
-func Run(ctx context.Context, addr string) (ngrok.EndpointForwarder, error) {
-	agent, err := ngrok.NewAgent(ngrok.WithAuthtoken(TOKEN))
+func StartHTTPTunnel(ctx context.Context, addr string) (ngrok.EndpointForwarder, error) {
+	token, err := getNgrokToken()
+	if err != nil {
+		return nil, err
+	}
+
+	agent, err := ngrok.NewAgent(ngrok.WithAuthtoken(token))
 	if err != nil {
 		return nil, fmt.Errorf("Error creating ngrok agent: %v", err.Error())
 	}
@@ -22,8 +37,6 @@ func Run(ctx context.Context, addr string) (ngrok.EndpointForwarder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Error creating ngrok forwarder: %v", err.Error())
 	}
-
-	fmt.Println("Endpoint online: forwarding from", tunnel.URL(), "to", addr)
 
 	return tunnel, nil
 }
