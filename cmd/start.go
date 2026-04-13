@@ -11,16 +11,20 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/NirajNair/syncdoc/internal/document"
 	"github.com/NirajNair/syncdoc/internal/transport"
 	"github.com/NirajNair/syncdoc/internal/tunnel"
 	"github.com/NirajNair/syncdoc/internal/utils"
+	"github.com/NirajNair/syncdoc/internal/watcher"
 	"github.com/spf13/cobra"
 )
+
+const syncdocFileName = "syncdoc.txt"
 
 // startCmd represents the start command
 var startCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Start hosting a sync session",
+	Short: "Start hosting a syncdoc session",
 	Run: func(cmd *cobra.Command, args []string) {
 		err := startSession()
 		if err != nil {
@@ -30,11 +34,23 @@ var startCmd = &cobra.Command{
 	},
 }
 
+// Starts a new syncdoc session as a host
 func startSession() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 1. Start TCP server
+	// 1. Initialize syncdoc.txt
+	if err := initializeSyncdocFile(); err != nil {
+		return err
+	}
+
+	// 2. Create CRDT document
+	doc, err := document.NewDocument()
+	if err != nil {
+		return err
+	}
+
+	// 3. Start TCP server
 	server := transport.NewServer()
 	listener, err := server.Start(ctx)
 	if err != nil {
@@ -42,7 +58,7 @@ func startSession() error {
 	}
 	port := transport.GetPort(listener)
 
-	// 2. Start Ngrok tunnel
+	// 4. Start Ngrok tunnel
 	tunnel, err := tunnel.StartHTTPTunnel(ctx, fmt.Sprintf("http://localhost:%d", port))
 	if err != nil {
 		return err
@@ -55,13 +71,38 @@ func startSession() error {
 	}
 	fmt.Printf("Please share this address to join the session: \n\n %s \n\n", wsUrl)
 
-	// 3. Wait for peer to connect (non-blocking)
+	// 5. Wait for peer to connect (non-blocking)
 	conn := <-server.ConnChan
+	fmt.Println("Peer connected! Starting sync...")
+
+	// 6. Start file watcher
+	w, err := watcher.NewWatcher()
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+
+	// 6. Setup file change handler
+	w.Watch(syncdocFileName, func(data []byte) {
+		syncData, err := doc.ApplyLocalChange(string(data))
+		if err != nil {
+			fmt.Printf("Error applying local change: %s\n", err.Error())
+		}
+
+		if syncData != nil {
+			if err := transport.WriteFrame(conn, syncData); err != nil {
+				fmt.Printf("Error sending sync data: %s\n", err.Error())
+			} else {
+				fmt.Println("Local changes synced with peer")
+
+			}
+		}
+	})
 
 	var wg sync.WaitGroup
 	errChan := make(chan error, 1)
 
-	// start continuous message reader
+	// 7. Start continuous message reader
 	wg.Go(
 		func() {
 			for {
@@ -69,7 +110,7 @@ func startSession() error {
 				case <-ctx.Done():
 					return
 				default:
-					msg, err := transport.ReadMessage(conn)
+					syncData, err := transport.ReadFrame(conn)
 					if err != nil {
 						select {
 						case errChan <- err:
@@ -77,15 +118,27 @@ func startSession() error {
 						}
 						return
 					}
-					fmt.Println("Received: ", msg)
+					newContent, err := doc.ApplyRemoteChange(syncData)
+					if err != nil {
+						fmt.Printf("Error applying remote change: %s\n", err.Error())
+						continue
+					}
+					if newContent != "" {
+						if err := w.WriteRemote([]byte(newContent)); err != nil {
+							fmt.Printf("Error writing remote changes: %s\n", err.Error())
+						} else {
+							fmt.Println("Remote change applied to file")
+						}
+					}
 				}
 			}
 		},
 	)
 
-	// Send a test message
+	// 8. Send initial sync to peer
 	go func() {
-		if err := transport.SendMessage(conn, "Hi from Host!"); err != nil {
+		content, _ := doc.GetContent()
+		if err := transport.SendMessage(conn, content); err != nil {
 			fmt.Printf("Send error: %v\n", err)
 		}
 	}()
@@ -113,6 +166,21 @@ func startSession() error {
 
 	server.Close()
 	fmt.Println("Server stopped")
+
+	return nil
+}
+
+func initializeSyncdocFile() error {
+	if _, err := os.Stat(syncdocFileName); err == nil {
+		fmt.Println("Using existing %s\n", syncdocFileName)
+		return nil
+	}
+
+	if err := os.WriteFile(syncdocFileName, []byte(document.DefaultTemplate), 0644); err != nil {
+		return fmt.Errorf("Error creating %s: %v", syncdocFileName, err.Error())
+	}
+
+	fmt.Printf("Created %s\n", syncdocFileName)
 
 	return nil
 }

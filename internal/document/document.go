@@ -8,7 +8,7 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-const defaultTemplate = `Welcome to SyncDoc!
+const DefaultTemplate = `Welcome to SyncDoc!
 Type away and save the file to watch the magic happen...
 `
 
@@ -24,14 +24,14 @@ type Document struct {
 func NewDocument() (*Document, error) {
 	doc := automerge.New()
 	text := doc.Path("content").Text()
-	if err := text.Set(defaultTemplate); err != nil {
+	if err := text.Set(DefaultTemplate); err != nil {
 		return nil, fmt.Errorf("Error creating DRDT document: %v", err.Error())
 	}
 
 	return &Document{
 		doc:              doc,
 		text:             text,
-		lastKnownContent: defaultTemplate,
+		lastKnownContent: DefaultTemplate,
 		pendingChanges:   make(chan func(), 10),
 	}, nil
 }
