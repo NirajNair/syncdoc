@@ -172,7 +172,7 @@ func startSession() error {
 
 func initializeSyncdocFile() error {
 	if _, err := os.Stat(syncdocFileName); err == nil {
-		fmt.Println("Using existing %s\n", syncdocFileName)
+		fmt.Printf("Using existing %s\n", syncdocFileName)
 		return nil
 	}
 
