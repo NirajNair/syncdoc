@@ -135,11 +135,17 @@ func startSession() error {
 		},
 	)
 
-	// 8. Send initial sync to peer
+	// 8. Send initial sync to peer (as CRDT update, not raw text)
 	go func() {
-		content, _ := doc.GetContent()
-		if err := transport.SendMessage(conn, content); err != nil {
-			fmt.Printf("Send error: %v\n", err)
+		// Generate full CRDT update for initial state
+		// Use nil state vector to get complete document state
+		syncData := doc.GenerateFullUpdate()
+		if syncData != nil {
+			if err := transport.WriteFrame(conn, syncData); err != nil {
+				fmt.Printf("Send error: %v\n", err)
+			} else {
+				fmt.Println("Initial sync sent to peer")
+			}
 		}
 	}()
 

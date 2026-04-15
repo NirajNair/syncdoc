@@ -1,9 +1,12 @@
 package watcher
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -17,6 +20,7 @@ type Watcher struct {
 	isRemoteWrite bool
 	onChange      func([]byte)
 	stopChan      chan struct{}
+	lastHash      string
 }
 
 // Create a new file watcher
@@ -50,6 +54,12 @@ func (w *Watcher) Watch(path string, onChange func([]byte)) error {
 	return nil
 }
 
+// calculateHash computes SHA-256 hash of data
+func calculateHash(data []byte) string {
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
+}
+
 // Continuously listens for fsnotify events and processes it.
 func (w *Watcher) watchLoop() {
 	for {
@@ -59,8 +69,21 @@ func (w *Watcher) watchLoop() {
 				return
 			}
 
-			if !event.Has(fsnotify.Write) {
+			// Handle Write, Rename, and Create events
+			if !event.Has(fsnotify.Write) &&
+				!event.Has(fsnotify.Rename) &&
+				!event.Has(fsnotify.Create) {
 				continue
+			}
+
+			// After detecting rename, re-add file to watcher (inode changed)
+			if event.Has(fsnotify.Rename) {
+				// Small delay to ensure rename completes
+				time.Sleep(50 * time.Millisecond)
+				if err := w.watcher.Add(w.path); err != nil {
+					fmt.Printf("Error re-watching file after rename: %v\n", err)
+					continue
+				}
 			}
 
 			w.mu.RLock()
@@ -79,6 +102,17 @@ func (w *Watcher) watchLoop() {
 				fmt.Printf("Error reading file: %v\n", err)
 				continue
 			}
+
+			// Hash-based deduplication: only trigger if content actually changed
+			currentHash := calculateHash(data)
+			w.mu.Lock()
+			if currentHash == w.lastHash {
+				w.mu.Unlock()
+				fmt.Printf("File content unchanged (hash match), skipping sync\n")
+				continue
+			}
+			w.lastHash = currentHash
+			w.mu.Unlock()
 
 			if w.onChange != nil {
 				w.onChange(data)
@@ -100,6 +134,8 @@ func (w *Watcher) watchLoop() {
 func (w *Watcher) WriteRemote(data []byte) error {
 	w.mu.Lock()
 	w.isRemoteWrite = true
+	// Update lastHash so we don't trigger on our own write
+	w.lastHash = calculateHash(data)
 	w.mu.Unlock()
 
 	if err := os.WriteFile(w.path, data, 0644); err != nil {

@@ -49,7 +49,15 @@ func (d *Document) GetContent() (string, error) {
 	return d.ytext.ToString(), nil
 }
 
-// Applies local file changes to CRDT after diffing
+// Creates a complete CRDT update of current document state.
+// Used for initial sync to avoid the lastKnownContent check in ApplyLocalChange
+func (d *Document) GenerateFullUpdate() []byte {
+	// Generate full document update (nil state vector = all changes)
+	update := y.EncodeStateAsUpdate(d.doc, nil)
+	return update
+}
+
+// Applies local file changes to CRDT after diffings.
 // Returns sync data to send (nil if no changes)
 func (d *Document) ApplyLocalChange(newContent string) ([]byte, error) {
 	if newContent == d.lastKnownContent {

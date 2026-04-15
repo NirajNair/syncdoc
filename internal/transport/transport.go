@@ -36,7 +36,7 @@ func WriteFrame(conn *websocket.Conn, data []byte) error {
 	var header [4]byte
 	binary.BigEndian.PutUint32(header[:], uint32(len(data)))
 
-	w, err := conn.NextWriter(websocket.TextMessage)
+	w, err := conn.NextWriter(websocket.BinaryMessage)
 	if err != nil {
 		return fmt.Errorf("Error getting WS writer: %v", err.Error())
 	}
