@@ -47,7 +47,7 @@ func WriteFrame(conn *websocket.Conn, data []byte) error {
 	}
 
 	if _, err := w.Write(data); err != nil {
-		return fmt.Errorf("Error writing header: %v", err.Error())
+		return fmt.Errorf("Error writing data: %v", err.Error())
 	}
 
 	return nil

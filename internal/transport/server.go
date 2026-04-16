@@ -94,6 +94,7 @@ func (s *Server) Close() {
 		}
 	}
 
+	fmt.Println("Server stopped")
 	close(s.ConnChan)
 }
 

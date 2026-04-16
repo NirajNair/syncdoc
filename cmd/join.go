@@ -41,6 +41,16 @@ func joinSession(addr string) error {
 	}
 	fmt.Println("Connected!!")
 
+	fmt.Println("Starting noise handshake...")
+	secureConn, err := transport.NewSecureSession(conn, true, secureSessionPrologue)
+	if err != nil {
+		conn.Close()
+		fmt.Println("WS connection closed")
+
+		return fmt.Errorf("Noise handshake failed: %w", err)
+	}
+	fmt.Println("Secure connection established!")
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -70,7 +80,7 @@ func joinSession(addr string) error {
 		}
 
 		if syncData != nil {
-			if err := transport.WriteFrame(conn, syncData); err != nil {
+			if err := secureConn.WriteFrame(syncData); err != nil {
 				fmt.Printf("Error sending sync data: %s\n", err.Error())
 			} else {
 				fmt.Println("Local changes synced with peer")
@@ -90,7 +100,7 @@ func joinSession(addr string) error {
 				case <-ctx.Done():
 					return
 				default:
-					syncData, err := transport.ReadFrame(conn)
+					syncData, err := secureConn.ReadFrame()
 					if err != nil {
 						select {
 						case errChan <- err:
@@ -128,8 +138,8 @@ func joinSession(addr string) error {
 
 	// Graceful Shutdown
 	cancel()
-	conn.Close() // Close connection to unblock ReadMessage in goroutine
-	fmt.Println("WS connection closed")
+	secureConn.Close()
+	fmt.Println("Secure connection closed")
 
 	wg.Wait()
 

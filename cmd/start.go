@@ -19,8 +19,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const syncdocFileName = "syncdoc.txt"
-
 // startCmd represents the start command
 var startCmd = &cobra.Command{
 	Use:   "start",
@@ -73,7 +71,23 @@ func startSession() error {
 
 	// 5. Wait for peer to connect (non-blocking)
 	conn := <-server.ConnChan
-	fmt.Println("Peer connected! Starting sync...")
+	fmt.Println("Peer connected!")
+
+	fmt.Println("Starting noise handshake...")
+	secureConn, err := transport.NewSecureSession(conn, false, secureSessionPrologue)
+	if err != nil {
+		err = fmt.Errorf("Noise handshake failed. %v", err.Error())
+
+		conn.Close()
+		fmt.Println("WS connection closed")
+
+		tunnel.Close()
+		fmt.Println("Tunnel stopped")
+
+		server.Close()
+		return err
+	}
+	fmt.Println("Secure connection established!")
 
 	// 6. Start file watcher
 	w, err := watcher.NewWatcher()
@@ -90,7 +104,7 @@ func startSession() error {
 		}
 
 		if syncData != nil {
-			if err := transport.WriteFrame(conn, syncData); err != nil {
+			if err := secureConn.WriteFrame(syncData); err != nil {
 				fmt.Printf("Error sending sync data: %s\n", err.Error())
 			} else {
 				fmt.Println("Local changes synced with peer")
@@ -110,7 +124,7 @@ func startSession() error {
 				case <-ctx.Done():
 					return
 				default:
-					syncData, err := transport.ReadFrame(conn)
+					syncData, err := secureConn.ReadFrame()
 					if err != nil {
 						select {
 						case errChan <- err:
@@ -141,7 +155,7 @@ func startSession() error {
 		// Use nil state vector to get complete document state
 		syncData := doc.GenerateFullUpdate()
 		if syncData != nil {
-			if err := transport.WriteFrame(conn, syncData); err != nil {
+			if err := secureConn.WriteFrame(syncData); err != nil {
 				fmt.Printf("Send error: %v\n", err)
 			} else {
 				fmt.Println("Initial sync sent to peer")
@@ -162,8 +176,8 @@ func startSession() error {
 
 	// Graceful Shutdown
 	cancel()
-	conn.Close()
-	fmt.Println("WS connection closed")
+	secureConn.Close()
+	fmt.Println("Secure connection closed")
 
 	wg.Wait()
 
@@ -171,7 +185,6 @@ func startSession() error {
 	fmt.Println("Tunel stopped")
 
 	server.Close()
-	fmt.Println("Server stopped")
 
 	return nil
 }
