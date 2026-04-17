@@ -5,9 +5,12 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -31,16 +34,32 @@ var joinCmd = &cobra.Command{
 	},
 }
 
-func joinSession(addr string) error {
-	fmt.Printf("Connecting to %s...\n", addr)
+func joinSession(code string) error {
+	fmt.Println("Connecting...")
 
-	// 1. Dial WebSocket connection
-	conn, _, err := websocket.DefaultDialer.Dial(addr+"/ws", nil)
+	// 1. Decode the joining code
+	decodedBytes, err := base64.StdEncoding.DecodeString(code)
+	if err != nil {
+		return fmt.Errorf("Error decoding joining code: %v", err.Error())
+	}
+	parts := strings.Split(string(decodedBytes), "||")
+	if len(parts) != 2 {
+		return fmt.Errorf("Invalid code format")
+	}
+	addr, token := parts[0], parts[1]
+
+	// 2. Dial WebSocket connection with URL-encoded token
+	wsURL, _ := url.Parse(addr + "/ws")
+	q := wsURL.Query()
+	q.Set("token", token)
+	wsURL.RawQuery = q.Encode()
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
 	if err != nil {
 		return err
 	}
 	fmt.Println("Connected!!")
 
+	// 3. Start noise handshake for mutual auth
 	fmt.Println("Starting noise handshake...")
 	secureConn, err := transport.NewSecureSession(conn, true, secureSessionPrologue)
 	if err != nil {
@@ -54,25 +73,25 @@ func joinSession(addr string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 2. Initialize syncdoc.txt
+	// 4. Initialize syncdoc.txt
 	if err := initializeSyncdocFile(); err != nil {
 		return err
 	}
 
-	// 3. Create CRDT document
+	// 5. Create CRDT document
 	doc, err := document.NewDocument()
 	if err != nil {
 		return err
 	}
 
-	// 4. Start file watcher
+	// 6. Start file watcher
 	w, err := watcher.NewWatcher()
 	if err != nil {
 		return err
 	}
 	defer w.Close()
 
-	// 5. Setup file change handler
+	// 7. Setup file change handler
 	w.Watch(syncdocFileName, func(data []byte) {
 		syncData, err := doc.ApplyLocalChange(string(data))
 		if err != nil {
@@ -92,7 +111,7 @@ func joinSession(addr string) error {
 	var wg sync.WaitGroup
 	errChan := make(chan error, 1)
 
-	// 6. Start continuous message reader
+	// 8. Start continuous message reader
 	wg.Go(
 		func() {
 			for {

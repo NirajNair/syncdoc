@@ -2,11 +2,14 @@ package transport
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -15,17 +18,51 @@ type Server struct {
 	mu     sync.RWMutex
 	active bool
 
-	sessions map[string]*websocket.Conn
+	sessions map[string]*Session
 	listener net.Listener
 	ConnChan chan *websocket.Conn
+	doneChan chan struct{}
+}
+
+type Session struct {
+	conn      *websocket.Conn
+	active    bool
+	Token     string
+	expiresAt time.Time
 }
 
 func NewServer() *Server {
 	return &Server{
 		active:   false,
-		sessions: make(map[string]*websocket.Conn),
+		sessions: make(map[string]*Session),
 		ConnChan: make(chan *websocket.Conn),
+		doneChan: make(chan struct{}),
 	}
+}
+
+func (s *Server) CreateSession() *Session {
+	b := make([]byte, 16)
+	rand.Read(b)
+	token := base64.URLEncoding.EncodeToString(b)
+	session := &Session{
+		Token:     token,
+		active:    false,
+		expiresAt: time.Now().Add(30 * time.Second),
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for oldToken, oldSession := range s.sessions {
+		if oldSession.active {
+			oldSession.conn.Close()
+		}
+		delete(s.sessions, oldToken)
+	}
+
+	s.sessions[session.Token] = session
+
+	return session
 }
 
 var upgrader = websocket.Upgrader{
@@ -64,6 +101,12 @@ func (s *Server) Start(ctx context.Context) (net.Listener, error) {
 }
 
 func (s *Server) handleWSConn(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if err := s.validateConnRequest(token); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		msg := fmt.Sprintf("Error upgrading to Web Socket connection: %v", err.Error())
@@ -72,10 +115,35 @@ func (s *Server) handleWSConn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
-	s.sessions["test"] = conn
+	s.sessions[token].conn = conn
+	s.sessions[token].active = true
+	s.sessions[token].expiresAt = time.Time{}
+	delete(s.sessions, token)
 	s.mu.Unlock()
 
 	s.ConnChan <- conn
+}
+
+func (s *Server) validateConnRequest(token string) error {
+	if token == "" {
+		return fmt.Errorf("Token is missing")
+	}
+
+	s.mu.RLock()
+	session := s.sessions[token]
+	s.mu.RUnlock()
+
+	if session == nil {
+		return fmt.Errorf("Invalid token")
+	}
+	if session.active {
+		return fmt.Errorf("Cannot join as session is already active")
+	}
+	if time.Now().After(session.expiresAt) {
+		return fmt.Errorf("Session has expired")
+	}
+
+	return nil
 }
 
 func (s *Server) Close() {
@@ -88,14 +156,21 @@ func (s *Server) Close() {
 		s.listener.Close()
 	}
 
-	for _, conn := range s.sessions {
-		if conn != nil {
-			conn.Close()
+	for _, session := range s.sessions {
+		if session != nil && session.conn != nil {
+			session.conn.Close()
 		}
 	}
 
+	close(s.doneChan)
+
 	fmt.Println("Server stopped")
 	close(s.ConnChan)
+}
+
+// DoneChan returns the channel that signals server shutdown
+func (s *Server) DoneChan() <-chan struct{} {
+	return s.doneChan
 }
 
 func GetPort(ln net.Listener) int {

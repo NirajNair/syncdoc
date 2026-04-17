@@ -5,17 +5,21 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/NirajNair/syncdoc/internal/document"
 	"github.com/NirajNair/syncdoc/internal/transport"
 	"github.com/NirajNair/syncdoc/internal/tunnel"
 	"github.com/NirajNair/syncdoc/internal/utils"
 	"github.com/NirajNair/syncdoc/internal/watcher"
+	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 )
 
@@ -67,10 +71,54 @@ func startSession() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Please share this address to join the session: \n\n %s \n\n", wsUrl)
 
-	// 5. Wait for peer to connect (non-blocking)
-	conn := <-server.ConnChan
+	session := server.CreateSession()
+
+	code := base64.StdEncoding.EncodeToString([]byte(wsUrl + "||" + session.Token))
+	fmt.Printf("Please share this code to join the session:\n\n%s\n\n", code)
+
+	// 5. Wait for peer to connect with timeout and countdown
+	timer := time.NewTimer(peerConnectionTimeoutSec * time.Second)
+	defer timer.Stop()
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	remaining := peerConnectionTimeoutSec
+
+	var conn *websocket.Conn
+
+waitLoop:
+	for {
+		select {
+		case conn = <-server.ConnChan:
+			break waitLoop
+		case <-server.DoneChan():
+			select {
+			case conn = <-server.ConnChan:
+				break waitLoop
+			default:
+				return fmt.Errorf("Server shut down before peer connected")
+			}
+		case <-timer.C:
+			// Timeout - clean up and exit
+			fmt.Printf("\r%s\r", strings.Repeat(" ", 50)) // Clear line
+			fmt.Printf("No peer connected within %ds.\n", peerConnectionTimeoutSec)
+
+			tunnel.Close()
+			fmt.Println("Tunnel closed")
+			server.Close()
+			return fmt.Errorf("Session expired")
+		case <-ticker.C:
+			remaining--
+			if remaining > 0 {
+				fmt.Printf("\rWaiting for peer. Session stops in %ds", remaining)
+			}
+		}
+	}
+
+	// Peer connected - clear countdown line and show success
+	fmt.Printf("\r%s\r", strings.Repeat(" ", 50)) // Clear line
 	fmt.Println("Peer connected!")
 
 	fmt.Println("Starting noise handshake...")
