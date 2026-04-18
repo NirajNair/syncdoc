@@ -184,8 +184,8 @@ waitLoop:
 						log.Debug("Error applying remote change", "error", err)
 						continue
 					}
-					if newContent != "" {
-						if err := w.WriteRemote([]byte(newContent)); err != nil {
+					if newContent != nil {
+						if err := w.WriteRemote([]byte(*newContent)); err != nil {
 							log.Debug("Error writing remote changes", "error", err)
 						} else {
 							fmt.Println("Remote change applied to file")

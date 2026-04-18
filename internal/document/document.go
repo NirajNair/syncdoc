@@ -95,13 +95,12 @@ func (d *Document) ApplyLocalChange(newContent string) ([]byte, error) {
 }
 
 // Merges remote sync data into the CRDT
-// Returns the new content to write to file (nil if no change needed)
-func (d *Document) ApplyRemoteChange(syncData []byte) (string, error) {
+// Returns pointer to new content to write to file (nil if no change needed)
+// Returns nil pointer if content hasn't changed, returns pointer to empty string if content became empty
+func (d *Document) ApplyRemoteChange(syncData []byte) (*string, error) {
 	if len(syncData) == 0 {
-		return "", nil
+		return nil, nil
 	}
-
-	oldContent, _ := d.GetContent()
 
 	// Apply update to existing doc (merges, doesn't replace)
 	d.doc.Transact(func(trans *y.Transaction) {
@@ -110,18 +109,19 @@ func (d *Document) ApplyRemoteChange(syncData []byte) (string, error) {
 
 	newContent, err := d.GetContent()
 	if err != nil {
-		return "", fmt.Errorf("Error getting content after remote changes: %w", err)
+		return nil, fmt.Errorf("Error getting content after remote changes: %w", err)
 	}
 
-	// Only return content if it actually changed
-	if newContent == oldContent || newContent == d.lastKnownContent {
-		return "", nil
+	// Only return content if it actually changed from what we last sent to remote
+	if newContent == d.lastKnownContent {
+		return nil, nil
 	}
 
 	d.lastKnownContent = newContent
 	d.lastStateVector = y.EncodeStateVector(d.doc, nil, y.NewUpdateEncoderV1())
 
-	return newContent, nil
+	// Return pointer to new content (including empty string)
+	return &newContent, nil
 }
 
 // Queues a local change function to be processed later.
