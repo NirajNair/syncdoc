@@ -10,11 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NirajNair/syncdoc/internal/logger"
 	"github.com/gorilla/websocket"
 )
 
 func TestNewServer(t *testing.T) {
-	server := NewServer()
+	log := logger.New(false)
+	server := NewServer(log)
 
 	if server == nil {
 		t.Fatal("NewServer() returned nil")
@@ -38,7 +40,8 @@ func TestNewServer(t *testing.T) {
 }
 
 func TestCreateSession(t *testing.T) {
-	server := NewServer()
+	log := logger.New(false)
+	server := NewServer(log)
 
 	session := server.CreateSession()
 
@@ -86,7 +89,8 @@ func TestCreateSession(t *testing.T) {
 }
 
 func TestCreateSession_ClearsOldSessions(t *testing.T) {
-	server := NewServer()
+	log := logger.New(false)
+	server := NewServer(log)
 
 	// Create first session
 	session1 := server.CreateSession()
@@ -113,7 +117,8 @@ func TestCreateSession_ClearsOldSessions(t *testing.T) {
 }
 
 func TestValidateConnRequest(t *testing.T) {
-	server := NewServer()
+	log := logger.New(false)
+	server := NewServer(log)
 
 	tests := []struct {
 		name      string
@@ -211,7 +216,8 @@ func TestValidateConnRequest(t *testing.T) {
 }
 
 func TestServer_Start(t *testing.T) {
-	server := NewServer()
+	log := logger.New(false)
+	server := NewServer(log)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -242,7 +248,8 @@ func TestServer_Start(t *testing.T) {
 }
 
 func TestHandleWSConn_InvalidToken(t *testing.T) {
-	server := NewServer()
+	log := logger.New(false)
+	server := NewServer(log)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -270,7 +277,8 @@ func TestHandleWSConn_InvalidToken(t *testing.T) {
 }
 
 func TestServer_Close(t *testing.T) {
-	server := NewServer()
+	log := logger.New(false)
+	server := NewServer(log)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -298,7 +306,8 @@ func TestServer_Close(t *testing.T) {
 }
 
 func TestServer_DoneChan(t *testing.T) {
-	server := NewServer()
+	log := logger.New(false)
+	server := NewServer(log)
 
 	// Initially, doneChan should block
 	select {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"unicode/utf8"
 
+	"github.com/NirajNair/syncdoc/internal/logger"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	y "github.com/skyterra/y-crdt"
 )
@@ -19,10 +20,11 @@ type Document struct {
 	lastKnownContent string
 	pendingChanges   chan func() // Queue that holds local changes during remote writes
 	lastStateVector  []byte      // Track state for incremental sync
+	logger           *logger.Logger
 }
 
 // Creates a new Document with initial content via a template
-func NewDocument() (*Document, error) {
+func NewDocument(logger *logger.Logger) (*Document, error) {
 	// Create doc with GC disabled to avoid nil pointer issues in transaction cleanup
 	doc := y.NewDoc(generateGUID(), false, nil, nil, false)
 	ytext := doc.GetText("content")
@@ -41,6 +43,7 @@ func NewDocument() (*Document, error) {
 		lastKnownContent: DefaultTemplate,
 		pendingChanges:   make(chan func(), 10),
 		lastStateVector:  stateVector,
+		logger:           logger,
 	}, nil
 }
 
@@ -107,7 +110,7 @@ func (d *Document) ApplyRemoteChange(syncData []byte) (string, error) {
 
 	newContent, err := d.GetContent()
 	if err != nil {
-		return "", fmt.Errorf("error getting content after remote changes: %w", err)
+		return "", fmt.Errorf("Error getting content after remote changes: %w", err)
 	}
 
 	// Only return content if it actually changed
@@ -127,7 +130,7 @@ func (d *Document) QueueLocalChange(fn func()) {
 	select {
 	case d.pendingChanges <- fn:
 	default:
-		fmt.Println("Warning: change queue full")
+		d.logger.Debug("Change queue full, dropping local change")
 	}
 }
 

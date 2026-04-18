@@ -28,8 +28,7 @@ var joinCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		err := joinSession(args[0])
 		if err != nil {
-			fmt.Println(err.Error())
-			os.Exit(1)
+			log.Fatal(err)
 		}
 	},
 }
@@ -60,15 +59,15 @@ func joinSession(code string) error {
 	fmt.Println("Connected!!")
 
 	// 3. Start noise handshake for mutual auth
-	fmt.Println("Starting noise handshake...")
+	fmt.Println("Securing connection...")
 	secureConn, err := transport.NewSecureSession(conn, true, secureSessionPrologue)
 	if err != nil {
 		conn.Close()
-		fmt.Println("WS connection closed")
+		log.Debug("WS connection closed")
 
-		return fmt.Errorf("Noise handshake failed: %w", err)
+		return fmt.Errorf("Failed securing connection. %v", err)
 	}
-	fmt.Println("Secure connection established!")
+	fmt.Println("Secure connection established")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -79,13 +78,13 @@ func joinSession(code string) error {
 	}
 
 	// 5. Create CRDT document
-	doc, err := document.NewDocument()
+	doc, err := document.NewDocument(log)
 	if err != nil {
 		return err
 	}
 
 	// 6. Start file watcher
-	w, err := watcher.NewWatcher()
+	w, err := watcher.NewWatcher(log)
 	if err != nil {
 		return err
 	}
@@ -95,12 +94,12 @@ func joinSession(code string) error {
 	w.Watch(syncdocFileName, func(data []byte) {
 		syncData, err := doc.ApplyLocalChange(string(data))
 		if err != nil {
-			fmt.Printf("Error applying local change: %s\n", err.Error())
+			log.Debug("Error applying local change", "error", err)
 		}
 
 		if syncData != nil {
 			if err := secureConn.WriteFrame(syncData); err != nil {
-				fmt.Printf("Error sending sync data: %s\n", err.Error())
+				log.Debug("Error sending sync data", "error", err)
 			} else {
 				fmt.Println("Local changes synced with peer")
 
@@ -129,12 +128,12 @@ func joinSession(code string) error {
 					}
 					newContent, err := doc.ApplyRemoteChange(syncData)
 					if err != nil {
-						fmt.Printf("Error applying remote change: %s\n", err.Error())
+						log.Debug("Error applying remote change", "error", err)
 						continue
 					}
 					if newContent != "" {
 						if err := w.WriteRemote([]byte(newContent)); err != nil {
-							fmt.Printf("Error writing remote changes: %s\n", err.Error())
+							log.Debug("Error writing remote changes", "error", err)
 						} else {
 							fmt.Println("Remote change applied to file")
 						}
@@ -152,13 +151,13 @@ func joinSession(code string) error {
 	case <-sigCh:
 		fmt.Println("Shutting down...")
 	case err := <-errChan:
-		fmt.Printf("Connection error: %v\n", err.Error())
+		log.Debug("Connection error", "error", err)
 	}
 
 	// Graceful Shutdown
 	cancel()
 	secureConn.Close()
-	fmt.Println("Secure connection closed")
+	log.Debug("Secure connection closed")
 
 	wg.Wait()
 

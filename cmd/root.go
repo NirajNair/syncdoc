@@ -6,6 +6,7 @@ package cmd
 import (
 	"os"
 
+	"github.com/NirajNair/syncdoc/internal/logger"
 	"github.com/spf13/cobra"
 )
 
@@ -33,14 +34,15 @@ func Execute() {
 	}
 }
 
+var debugFlag bool
+var log *logger.Logger
+
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
+	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Show verbose debug output")
 
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.syncdoc.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// This runs before ANY subcommand's Run function
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		log = logger.New(debugFlag)
+		return nil
+	}
 }
