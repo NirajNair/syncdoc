@@ -5,12 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/NirajNair/syncdoc/internal/logger"
 	"github.com/gorilla/websocket"
 )
 
@@ -22,6 +23,7 @@ type Server struct {
 	listener net.Listener
 	ConnChan chan *websocket.Conn
 	doneChan chan struct{}
+	logger   *logger.Logger
 }
 
 type Session struct {
@@ -31,12 +33,13 @@ type Session struct {
 	expiresAt time.Time
 }
 
-func NewServer() *Server {
+func NewServer(logger *logger.Logger) *Server {
 	return &Server{
 		active:   false,
 		sessions: make(map[string]*Session),
 		ConnChan: make(chan *websocket.Conn),
 		doneChan: make(chan struct{}),
+		logger:   logger,
 	}
 }
 
@@ -80,7 +83,7 @@ func (s *Server) Start(ctx context.Context) (net.Listener, error) {
 	port := GetPort(listener)
 	s.listener = listener
 
-	fmt.Printf("Starting server on port :%d\n", port)
+	s.logger.Debug(fmt.Sprintf("Starting server on port :%d", port))
 	// Start server in goroutine - reuse the existing listener!
 	go func() {
 		server := &http.Server{Handler: mux}
@@ -89,7 +92,10 @@ func (s *Server) Start(ctx context.Context) (net.Listener, error) {
 			server.Shutdown(context.Background())
 		}()
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			log.Printf("Server error: %v", err)
+			// Only log unexpected errors, not "use of closed network connection" which happens on normal shutdown
+			if !strings.Contains(err.Error(), "use of closed network connection") {
+				s.logger.Debug("Server error", "error", err)
+			}
 		}
 	}()
 
@@ -103,6 +109,7 @@ func (s *Server) Start(ctx context.Context) (net.Listener, error) {
 func (s *Server) handleWSConn(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if err := s.validateConnRequest(token); err != nil {
+		s.logger.Debug(err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -110,6 +117,7 @@ func (s *Server) handleWSConn(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		msg := fmt.Sprintf("Error upgrading to Web Socket connection: %v", err.Error())
+		s.logger.Debug(msg)
 		http.Error(w, msg, http.StatusInternalServerError)
 		return
 	}
@@ -164,7 +172,7 @@ func (s *Server) Close() {
 
 	close(s.doneChan)
 
-	fmt.Println("Server stopped")
+	s.logger.Debug("Server stopped")
 	close(s.ConnChan)
 }
 

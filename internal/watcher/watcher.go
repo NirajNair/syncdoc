@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NirajNair/syncdoc/internal/logger"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -21,10 +22,11 @@ type Watcher struct {
 	onChange      func([]byte)
 	stopChan      chan struct{}
 	lastHash      string
+	logger        *logger.Logger
 }
 
 // Create a new file watcher
-func NewWatcher() (*Watcher, error) {
+func NewWatcher(logger *logger.Logger) (*Watcher, error) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("Error creating file watcher: %v", err.Error())
@@ -33,6 +35,7 @@ func NewWatcher() (*Watcher, error) {
 		watcher:       w,
 		isRemoteWrite: false,
 		stopChan:      make(chan struct{}),
+		logger:        logger,
 	}, nil
 }
 
@@ -81,7 +84,7 @@ func (w *Watcher) watchLoop() {
 				// Small delay to ensure rename completes
 				time.Sleep(50 * time.Millisecond)
 				if err := w.watcher.Add(w.path); err != nil {
-					fmt.Printf("Error re-watching file after rename: %v\n", err)
+					w.logger.Debug("Error re-watching file after rename", "error", err)
 					continue
 				}
 			}
@@ -99,7 +102,7 @@ func (w *Watcher) watchLoop() {
 
 			data, err := os.ReadFile(w.path)
 			if err != nil {
-				fmt.Printf("Error reading file: %v\n", err)
+				w.logger.Debug("Error reading file", "error", err)
 				continue
 			}
 
@@ -108,7 +111,7 @@ func (w *Watcher) watchLoop() {
 			w.mu.Lock()
 			if currentHash == w.lastHash {
 				w.mu.Unlock()
-				fmt.Printf("File content unchanged (hash match), skipping sync\n")
+				w.logger.Debug("File content unchanged, skipping sync")
 				continue
 			}
 			w.lastHash = currentHash
@@ -122,7 +125,7 @@ func (w *Watcher) watchLoop() {
 			if !ok {
 				return
 			}
-			fmt.Printf("Watcher error: %v\n", err)
+			w.logger.Debug("Watcher error", "error", err)
 
 		case <-w.stopChan:
 			return

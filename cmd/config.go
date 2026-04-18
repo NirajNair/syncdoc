@@ -25,8 +25,7 @@ var configShowCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := config.Load()
 		if err != nil {
-			fmt.Println(err.Error())
-			os.Exit(1)
+			log.Fatal(err)
 		}
 		cfgBytes, _ := json.MarshalIndent(cfg, "", "\t")
 		fmt.Println(string(cfgBytes))
@@ -39,10 +38,10 @@ var configSaveNgrokTokenCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		token := args[0]
 		if err := config.SetNgrokToken(token); err != nil {
-			fmt.Fprintf(os.Stderr, "Error saving ngrok token: %v\n", err)
+			fmt.Println("Error saving ngrok token:", err)
 			os.Exit(1)
 		}
-		fmt.Println("Ngrok Token saved successfully")
+		fmt.Println("Ngrok token saved successfully")
 	},
 }
 

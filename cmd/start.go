@@ -30,8 +30,7 @@ var startCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		err := startSession()
 		if err != nil {
-			fmt.Println(err.Error())
-			os.Exit(1)
+			log.Fatal(err)
 		}
 	},
 }
@@ -47,13 +46,13 @@ func startSession() error {
 	}
 
 	// 2. Create CRDT document
-	doc, err := document.NewDocument()
+	doc, err := document.NewDocument(log)
 	if err != nil {
 		return err
 	}
 
 	// 3. Start TCP server
-	server := transport.NewServer()
+	server := transport.NewServer(log)
 	listener, err := server.Start(ctx)
 	if err != nil {
 		return err
@@ -106,7 +105,7 @@ waitLoop:
 			fmt.Printf("No peer connected within %ds.\n", peerConnectionTimeoutSec)
 
 			tunnel.Close()
-			fmt.Println("Tunnel closed")
+			log.Debug("Tunnel closed")
 			server.Close()
 			return fmt.Errorf("Session expired")
 		case <-ticker.C:
@@ -121,24 +120,24 @@ waitLoop:
 	fmt.Printf("\r%s\r", strings.Repeat(" ", 50)) // Clear line
 	fmt.Println("Peer connected!")
 
-	fmt.Println("Starting noise handshake...")
+	fmt.Println("Securing connection...")
 	secureConn, err := transport.NewSecureSession(conn, false, secureSessionPrologue)
 	if err != nil {
-		err = fmt.Errorf("Noise handshake failed. %v", err.Error())
+		err = fmt.Errorf("Failed securing connection. %v", err.Error())
 
 		conn.Close()
-		fmt.Println("WS connection closed")
+		log.Debug("WS connection closed")
 
 		tunnel.Close()
-		fmt.Println("Tunnel stopped")
+		log.Debug("Tunnel stopped")
 
 		server.Close()
 		return err
 	}
-	fmt.Println("Secure connection established!")
+	fmt.Println("Secure connection established")
 
 	// 6. Start file watcher
-	w, err := watcher.NewWatcher()
+	w, err := watcher.NewWatcher(log)
 	if err != nil {
 		return err
 	}
@@ -148,12 +147,12 @@ waitLoop:
 	w.Watch(syncdocFileName, func(data []byte) {
 		syncData, err := doc.ApplyLocalChange(string(data))
 		if err != nil {
-			fmt.Printf("Error applying local change: %s\n", err.Error())
+			log.Debug("Error applying local change", "error", err)
 		}
 
 		if syncData != nil {
 			if err := secureConn.WriteFrame(syncData); err != nil {
-				fmt.Printf("Error sending sync data: %s\n", err.Error())
+				log.Debug("Error sending sync data", "error", err)
 			} else {
 				fmt.Println("Local changes synced with peer")
 
@@ -182,12 +181,12 @@ waitLoop:
 					}
 					newContent, err := doc.ApplyRemoteChange(syncData)
 					if err != nil {
-						fmt.Printf("Error applying remote change: %s\n", err.Error())
+						log.Debug("Error applying remote change", "error", err)
 						continue
 					}
 					if newContent != "" {
 						if err := w.WriteRemote([]byte(newContent)); err != nil {
-							fmt.Printf("Error writing remote changes: %s\n", err.Error())
+							log.Debug("Error writing remote changes", "error", err)
 						} else {
 							fmt.Println("Remote change applied to file")
 						}
@@ -204,9 +203,9 @@ waitLoop:
 		syncData := doc.GenerateFullUpdate()
 		if syncData != nil {
 			if err := secureConn.WriteFrame(syncData); err != nil {
-				fmt.Printf("Send error: %v\n", err)
+				log.Debug("Send error:", err)
 			} else {
-				fmt.Println("Initial sync sent to peer")
+				log.Debug("Initial sync sent to peer")
 			}
 		}
 	}()
@@ -219,18 +218,18 @@ waitLoop:
 	case <-sigCh:
 		fmt.Println("Shutting down...")
 	case err := <-errChan:
-		fmt.Printf("Connection error: %v\n", err.Error())
+		log.Debug("Connection error", "error", err)
 	}
 
 	// Graceful Shutdown
 	cancel()
 	secureConn.Close()
-	fmt.Println("Secure connection closed")
+	log.Debug("Secure connection closed")
 
 	wg.Wait()
 
 	tunnel.Close()
-	fmt.Println("Tunel stopped")
+	log.Debug("Tunnel stopped")
 
 	server.Close()
 

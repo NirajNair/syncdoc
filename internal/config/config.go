@@ -102,7 +102,7 @@ func GetNgrokToken() (string, error) {
 func SetNgrokToken(ngrokToken string) error {
 	cfg, err := Load()
 	if err != nil {
-		fmt.Println(err.Error())
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 	cfg.NgrokToken = ngrokToken
 	return Save(cfg)
