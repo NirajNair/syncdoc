@@ -15,12 +15,36 @@ import (
 	"time"
 
 	"github.com/NirajNair/syncdoc/internal/document"
+	"github.com/NirajNair/syncdoc/internal/logger"
 	"github.com/NirajNair/syncdoc/internal/transport"
 	"github.com/NirajNair/syncdoc/internal/tunnel"
 	"github.com/NirajNair/syncdoc/internal/utils"
 	"github.com/NirajNair/syncdoc/internal/watcher"
 	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
+)
+
+// factory functions for dependency injection (overridable in tests)
+var (
+	newDocumentFunc = func(logger *logger.Logger) (document.DocumentInterface, error) {
+		doc, err := document.NewDocument(logger)
+		if err != nil {
+			return nil, err
+		}
+		return doc, nil
+	}
+	newServerFunc = func(logger *logger.Logger) transport.ServerInterface {
+		return transport.New(logger)
+	}
+	newWatcherFunc = func(logger *logger.Logger) (watcher.WatcherInterface, error) {
+		return watcher.NewWatcher(logger)
+	}
+	startTunnelFunc = func(ctx context.Context, addr string) (tunnel.Tunnel, error) {
+		return tunnel.StartHTTPTunnel(ctx, addr)
+	}
+	newSecureSessionFunc = func(conn *websocket.Conn, isInitiator bool, prologue string) (transport.SecureSessionInterface, error) {
+		return transport.NewSecureSession(conn, isInitiator, prologue)
+	}
 )
 
 // startCmd represents the start command
@@ -46,13 +70,13 @@ func startSession() error {
 	}
 
 	// 2. Create CRDT document
-	doc, err := document.NewDocument(log)
+	doc, err := newDocumentFunc(log)
 	if err != nil {
 		return err
 	}
 
 	// 3. Start TCP server
-	server := transport.NewServer(log)
+	server := newServerFunc(log)
 	listener, err := server.Start(ctx)
 	if err != nil {
 		return err
@@ -60,12 +84,12 @@ func startSession() error {
 	port := transport.GetPort(listener)
 
 	// 4. Start Ngrok tunnel
-	tunnel, err := tunnel.StartHTTPTunnel(ctx, fmt.Sprintf("http://localhost:%d", port))
+	tunnel, err := startTunnelFunc(ctx, fmt.Sprintf("http://localhost:%d", port))
 	if err != nil {
 		return err
 	}
 
-	tunnelUrl := tunnel.URL().String()
+	tunnelUrl := tunnel.URL()
 	wsUrl, err := utils.GetWSAddr(tunnelUrl)
 	if err != nil {
 		return err
@@ -86,15 +110,17 @@ func startSession() error {
 	remaining := peerConnectionTimeoutSec
 
 	var conn *websocket.Conn
+	connChan := server.ConnChan()
+	doneChan := server.DoneChan()
 
 waitLoop:
 	for {
 		select {
-		case conn = <-server.ConnChan:
+		case conn = <-connChan:
 			break waitLoop
-		case <-server.DoneChan():
+		case <-doneChan:
 			select {
-			case conn = <-server.ConnChan:
+			case conn = <-connChan:
 				break waitLoop
 			default:
 				return fmt.Errorf("Server shut down before peer connected")
@@ -121,7 +147,7 @@ waitLoop:
 	fmt.Println("Peer connected!")
 
 	fmt.Println("Securing connection...")
-	secureConn, err := transport.NewSecureSession(conn, false, secureSessionPrologue)
+	secureConn, err := newSecureSessionFunc(conn, false, secureSessionPrologue)
 	if err != nil {
 		err = fmt.Errorf("Failed securing connection. %v", err.Error())
 
@@ -137,7 +163,7 @@ waitLoop:
 	fmt.Println("Secure connection established")
 
 	// 6. Start file watcher
-	w, err := watcher.NewWatcher(log)
+	w, err := newWatcherFunc(log)
 	if err != nil {
 		return err
 	}

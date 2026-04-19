@@ -89,11 +89,11 @@ func TestApplyRemoteChange(t *testing.T) {
 	}
 
 	// Content should have changed (will include both histories in CRDT merge)
-	if receivedContent == "" {
+	if receivedContent == nil || *receivedContent == "" {
 		t.Error("expected non-empty content from remote change")
 	}
 
-	t.Logf("Doc2 received content: '%s'", receivedContent)
+	t.Logf("Doc2 received content: '%s'", *receivedContent)
 
 	// Verify doc2 has merged content (contains both the template and the update)
 	content, _ := doc2.GetContent()
@@ -203,7 +203,11 @@ func TestRemoteChangeNoUpdate(t *testing.T) {
 
 	// Note: This might not return empty string because doc2's state vector has changed
 	// The content might be the same but the function should handle it gracefully
-	t.Logf("Duplicate update returned content: '%s'", receivedContent)
+	if receivedContent != nil {
+		t.Logf("Duplicate update returned content: '%s'", *receivedContent)
+	} else {
+		t.Log("Duplicate update returned nil (no content change)")
+	}
 }
 
 func TestUnicodeContent(t *testing.T) {
@@ -268,7 +272,7 @@ func TestPartialUpdate(t *testing.T) {
 		t.Fatalf("ApplyRemoteChange failed: %v", err)
 	}
 
-	if received == "" {
+	if received == nil || *received == "" {
 		t.Error("expected received content to be non-empty")
 	}
 

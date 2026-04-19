@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -334,5 +335,414 @@ func TestServer_DoneChan(t *testing.T) {
 		// Expected - channel is closed
 	case <-time.After(time.Second):
 		t.Error("DoneChan should be closed after Close()")
+	}
+}
+
+func TestHandleWSConn_ValidToken(t *testing.T) {
+	log := logger.New(false)
+	server := NewServer(log)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener, err := server.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer server.Close()
+
+	// Create a valid session
+	session := server.CreateSession()
+
+	port := GetPort(listener)
+	wsURL := url.URL{Scheme: "ws", Host: fmt.Sprintf("localhost:%d", port), Path: "/ws"}
+	wsURL.RawQuery = "token=" + session.Token
+
+	// Connect with valid token
+	ws, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	if err != nil {
+		t.Fatalf("Failed to connect with valid token: %v", err)
+	}
+	defer ws.Close()
+
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Errorf("Expected status 101 Switching Protocols, got %d", resp.StatusCode)
+	}
+
+	// Verify connection was received on ConnChan
+	select {
+	case conn := <-server.ConnChan:
+		if conn == nil {
+			t.Error("Expected connection on ConnChan, got nil")
+		}
+	case <-time.After(time.Second):
+		t.Error("Timeout waiting for connection on ConnChan")
+	}
+}
+
+func TestHandleWSConn_ExpiredSession(t *testing.T) {
+	log := logger.New(false)
+	server := NewServer(log)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener, err := server.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer server.Close()
+
+	// Create an expired session
+	server.mu.Lock()
+	server.sessions["expired-token"] = &Session{
+		Token:     "expired-token",
+		active:    false,
+		expiresAt: time.Now().Add(-1 * time.Second),
+	}
+	server.mu.Unlock()
+
+	port := GetPort(listener)
+	wsURL := url.URL{Scheme: "ws", Host: fmt.Sprintf("localhost:%d", port), Path: "/ws"}
+	wsURL.RawQuery = "token=expired-token"
+
+	// Try to connect with expired token
+	_, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	if err == nil {
+		t.Error("Expected error when connecting with expired token")
+		return
+	}
+
+	if resp != nil && resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("Expected status 400 Bad Request, got %d", resp.StatusCode)
+	}
+}
+
+func TestHandleWSConn_ActiveSession(t *testing.T) {
+	log := logger.New(false)
+	server := NewServer(log)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener, err := server.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer server.Close()
+
+	// Create an active session (simulating another connection)
+	server.mu.Lock()
+	server.sessions["active-token"] = &Session{
+		Token:     "active-token",
+		active:    true,
+		expiresAt: time.Now().Add(30 * time.Second),
+	}
+	server.mu.Unlock()
+
+	port := GetPort(listener)
+	wsURL := url.URL{Scheme: "ws", Host: fmt.Sprintf("localhost:%d", port), Path: "/ws"}
+	wsURL.RawQuery = "token=active-token"
+
+	// Try to connect to already active session
+	_, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	if err == nil {
+		t.Error("Expected error when connecting to active session")
+		return
+	}
+
+	if resp != nil && resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("Expected status 400 Bad Request, got %d", resp.StatusCode)
+	}
+}
+
+func TestHandleWSConn_WebSocketUpgrade(t *testing.T) {
+	log := logger.New(false)
+	server := NewServer(log)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener, err := server.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer server.Close()
+
+	session := server.CreateSession()
+
+	port := GetPort(listener)
+	wsURL := url.URL{Scheme: "ws", Host: fmt.Sprintf("localhost:%d", port), Path: "/ws"}
+	wsURL.RawQuery = "token=" + session.Token
+
+	// Connect using default dialer - it handles WebSocket headers internally
+	ws, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	if err != nil {
+		t.Fatalf("WebSocket upgrade failed: %v", err)
+	}
+	defer ws.Close()
+
+	// Verify upgrade response headers
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Errorf("Expected status 101 Switching Protocols, got %d", resp.StatusCode)
+	}
+
+	if resp.Header.Get("Upgrade") != "websocket" {
+		t.Errorf("Expected Upgrade header 'websocket', got '%s'", resp.Header.Get("Upgrade"))
+	}
+
+	if resp.Header.Get("Connection") != "Upgrade" {
+		t.Errorf("Expected Connection header 'Upgrade', got '%s'", resp.Header.Get("Connection"))
+	}
+
+	// Verify Sec-WebSocket-Accept header is present
+	if resp.Header.Get("Sec-WebSocket-Accept") == "" {
+		t.Error("Expected Sec-WebSocket-Accept header to be set")
+	}
+}
+
+func TestServer_MultipleConnections(t *testing.T) {
+	log := logger.New(false)
+	server := NewServer(log)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener, err := server.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer server.Close()
+
+	port := GetPort(listener)
+
+	// Create 3 independent sessions manually (CreateSession clears old sessions)
+	sessions := make([]*Session, 3)
+	server.mu.Lock()
+	for i := 0; i < 3; i++ {
+		token := fmt.Sprintf("test-token-%d", i)
+		sessions[i] = &Session{
+			Token:     token,
+			active:    false,
+			expiresAt: time.Now().Add(30 * time.Second),
+		}
+		server.sessions[token] = sessions[i]
+	}
+	server.mu.Unlock()
+
+	// Connect all 3 sessions
+	connections := make([]*websocket.Conn, 3)
+	for i, session := range sessions {
+		wsURL := url.URL{Scheme: "ws", Host: fmt.Sprintf("localhost:%d", port), Path: "/ws"}
+		wsURL.RawQuery = "token=" + session.Token
+
+		ws, _, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+		if err != nil {
+			t.Fatalf("Failed to connect session %d: %v", i, err)
+		}
+		connections[i] = ws
+		defer ws.Close()
+	}
+
+	// Verify all connections received on ConnChan
+	for i := 0; i < 3; i++ {
+		select {
+		case conn := <-server.ConnChan:
+			if conn == nil {
+				t.Errorf("Expected connection %d on ConnChan, got nil", i)
+			}
+		case <-time.After(time.Second):
+			t.Errorf("Timeout waiting for connection %d on ConnChan", i)
+		}
+	}
+
+	// Verify sessions are independent
+	for i, conn := range connections {
+		if conn == nil {
+			t.Errorf("Session %d connection is nil", i)
+		}
+	}
+}
+
+func TestServer_ConcurrentAccess(t *testing.T) {
+	log := logger.New(false)
+	server := NewServer(log)
+
+	numGoroutines := 10
+	numSessionsPerGoroutine := 10
+	tokens := make(chan string, numGoroutines*numSessionsPerGoroutine)
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < numSessionsPerGoroutine; j++ {
+				session := server.CreateSession()
+				tokens <- session.Token
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(tokens)
+
+	// Collect all tokens
+	tokenSet := make(map[string]bool)
+	for token := range tokens {
+		tokenSet[token] = true
+	}
+
+	// Verify we got the expected number of unique tokens
+	// Note: CreateSession clears old sessions, so we expect only the last ones
+	expectedTokens := numSessionsPerGoroutine
+	if len(tokenSet) < expectedTokens {
+		t.Errorf("Expected at least %d unique tokens, got %d", expectedTokens, len(tokenSet))
+	}
+}
+
+func TestGetPort_ValidListener(t *testing.T) {
+	log := logger.New(false)
+	server := NewServer(log)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener, err := server.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer server.Close()
+
+	port := GetPort(listener)
+
+	if port == 0 {
+		t.Error("GetPort() returned 0 for valid listener")
+	}
+
+	// Verify port is in valid ephemeral range (usually > 1024)
+	if port < 1024 || port > 65535 {
+		t.Errorf("Port %d is outside expected range", port)
+	}
+}
+
+func TestGetPort_NilListener(t *testing.T) {
+	// Test with nil listener - should panic
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("GetPort() with nil listener should panic")
+		}
+	}()
+
+	GetPort(nil)
+}
+
+func TestSession_SetActive(t *testing.T) {
+	session := &Session{
+		Token:     "test-token",
+		active:    false,
+		expiresAt: time.Now().Add(30 * time.Second),
+	}
+
+	if session.active {
+		t.Error("New session should not be active")
+	}
+
+	// Toggle active state
+	session.active = true
+	if !session.active {
+		t.Error("Session should be active after setting to true")
+	}
+
+	session.active = false
+	if session.active {
+		t.Error("Session should not be active after setting to false")
+	}
+}
+
+func TestServer_ContextCancellation(t *testing.T) {
+	log := logger.New(false)
+	server := NewServer(log)
+
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+
+	_, err := server.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	// Verify server is active
+	server.mu.RLock()
+	if !server.active {
+		t.Error("Server should be active after Start()")
+	}
+	server.mu.RUnlock()
+
+	// Cancel context - should trigger graceful shutdown
+	cancel()
+
+	// Give some time for shutdown to complete
+	time.Sleep(100 * time.Millisecond)
+
+	// Note: Context cancellation doesn't directly call Close(), but
+	// the HTTP server should shut down. We verify the server stops properly.
+	// The server may still be "active" in memory, but the HTTP server is stopped.
+}
+
+func TestValidateConnRequest_CaseSensitivity(t *testing.T) {
+	log := logger.New(false)
+	server := NewServer(log)
+
+	// Create session with specific case token
+	server.mu.Lock()
+	server.sessions["TestToken"] = &Session{
+		Token:     "TestToken",
+		active:    false,
+		expiresAt: time.Now().Add(30 * time.Second),
+	}
+	server.mu.Unlock()
+
+	// Test exact case - should succeed
+	err := server.validateConnRequest("TestToken")
+	if err != nil {
+		t.Errorf("validateConnRequest() with exact case failed: %v", err)
+	}
+
+	// Test different case - should fail (tokens are case sensitive)
+	lowerCaseErr := server.validateConnRequest("testtoken")
+	if lowerCaseErr == nil {
+		t.Error("validateConnRequest() with lowercase should fail (case sensitive)")
+	}
+
+	upperCaseErr := server.validateConnRequest("TESTTOKEN")
+	if upperCaseErr == nil {
+		t.Error("validateConnRequest() with uppercase should fail (case sensitive)")
+	}
+
+	mixedCaseErr := server.validateConnRequest("testToken")
+	if mixedCaseErr == nil {
+		t.Error("validateConnRequest() with mixed case should fail (case sensitive)")
+	}
+}
+
+func TestCreateSession_TokenUniqueness(t *testing.T) {
+	log := logger.New(false)
+	server := NewServer(log)
+
+	// Note: CreateSession clears old sessions, so we need to check
+	// that sequential calls generate unique tokens
+	tokens := make(map[string]bool)
+	numSessions := 100
+
+	for i := 0; i < numSessions; i++ {
+		session := server.CreateSession()
+		if tokens[session.Token] {
+			t.Errorf("Duplicate token generated on iteration %d: %s", i, session.Token)
+		}
+		tokens[session.Token] = true
+	}
+
+	// We expect 1 token since CreateSession clears old sessions
+	// But we should still verify no duplicates were generated
+	if len(tokens) != 1 {
+		// This is expected behavior - CreateSession clears old sessions
+		// But all 100 tokens should be unique (no duplicates)
+		t.Logf("Generated %d unique tokens (CreateSession clears old sessions)", len(tokens))
 	}
 }

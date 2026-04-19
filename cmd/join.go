@@ -33,19 +33,29 @@ var joinCmd = &cobra.Command{
 	},
 }
 
+// decodeJoiningCode decodes a base64-encoded joining code and extracts the address and token.
+// The code format is: base64(addr||token)
+func decodeJoiningCode(code string) (addr, token string, err error) {
+	decodedBytes, err := base64.StdEncoding.DecodeString(code)
+	if err != nil {
+		return "", "", fmt.Errorf("Error decoding joining code: %v", err.Error())
+	}
+	parts := strings.Split(string(decodedBytes), "||")
+	if len(parts) < 2 {
+		return "", "", fmt.Errorf("Invalid code format")
+	}
+	// Return first two parts, ignoring any extra parts
+	return parts[0], parts[1], nil
+}
+
 func joinSession(code string) error {
 	fmt.Println("Connecting...")
 
 	// 1. Decode the joining code
-	decodedBytes, err := base64.StdEncoding.DecodeString(code)
+	addr, token, err := decodeJoiningCode(code)
 	if err != nil {
-		return fmt.Errorf("Error decoding joining code: %v", err.Error())
+		return err
 	}
-	parts := strings.Split(string(decodedBytes), "||")
-	if len(parts) != 2 {
-		return fmt.Errorf("Invalid code format")
-	}
-	addr, token := parts[0], parts[1]
 
 	// 2. Dial WebSocket connection with URL-encoded token
 	wsURL, _ := url.Parse(addr + "/ws")

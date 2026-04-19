@@ -7,6 +7,9 @@ import (
 	"os"
 )
 
+// exitFunc allows mocking os.Exit for testing
+var exitFunc = os.Exit
+
 type Logger struct {
 	log *slog.Logger
 }
@@ -45,7 +48,7 @@ func (l *Logger) Fatal(err error) {
 	if l != nil && l.log != nil {
 		l.log.Error(err.Error())
 	}
-	os.Exit(1)
+	exitFunc(1)
 }
 
 type simpleHandler struct {
