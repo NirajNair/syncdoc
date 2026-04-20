@@ -11,7 +11,7 @@ import (
 // This enables dependency injection for testing.
 type ServerInterface interface {
 	Start(ctx context.Context) (net.Listener, error)
-	CreateSession() *Session
+	CreateSession(opts ...*SessionOption) *Session
 	ConnChan() <-chan *websocket.Conn
 	DoneChan() <-chan struct{}
 	Close()

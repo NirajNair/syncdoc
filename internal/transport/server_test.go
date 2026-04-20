@@ -15,6 +15,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func WithTimeout(timeout time.Duration) *SessionOption {
+	return &SessionOption{timeout: timeout}
+}
+
 func TestNewServer(t *testing.T) {
 	log := logger.New(false)
 	server := NewServer(log)
@@ -44,7 +48,7 @@ func TestCreateSession(t *testing.T) {
 	log := logger.New(false)
 	server := NewServer(log)
 
-	session := server.CreateSession()
+	session := server.CreateSession(WithTimeout(5 * time.Second))
 
 	if session == nil {
 		t.Fatal("CreateSession() returned nil")
@@ -69,10 +73,10 @@ func TestCreateSession(t *testing.T) {
 	}
 
 	// Should expire in ~30 seconds
-	expectedExpiry := time.Now().Add(30 * time.Second)
+	expectedExpiry := time.Now().Add(5 * time.Second)
 	diff := session.expiresAt.Sub(expectedExpiry)
 	if diff < -time.Second || diff > time.Second {
-		t.Errorf("Session expiry not within expected range: got %v, expected ~30s from now", session.expiresAt)
+		t.Errorf("Session expiry not within expected range: got %v, expected ~5s from now", session.expiresAt)
 	}
 
 	// Check session is stored
@@ -94,7 +98,7 @@ func TestCreateSession_ClearsOldSessions(t *testing.T) {
 	server := NewServer(log)
 
 	// Create first session
-	session1 := server.CreateSession()
+	session1 := server.CreateSession(nil)
 
 	// Verify first session exists
 	server.mu.RLock()
@@ -104,7 +108,7 @@ func TestCreateSession_ClearsOldSessions(t *testing.T) {
 	server.mu.RUnlock()
 
 	// Create second session
-	session2 := server.CreateSession()
+	session2 := server.CreateSession(nil)
 
 	// Verify first session is cleared
 	server.mu.RLock()
@@ -143,7 +147,7 @@ func TestValidateConnRequest(t *testing.T) {
 		{
 			name: "Valid token",
 			setup: func() {
-				server.CreateSession()
+				server.CreateSession(nil)
 				// Set a specific token for this test case
 				server.mu.Lock()
 				for k := range server.sessions {

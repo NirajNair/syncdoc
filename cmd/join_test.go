@@ -550,20 +550,16 @@ var upgrader = websocket.Upgrader{
 func TestInitializeSyncdocFile(t *testing.T) {
 	// Create temporary directory
 	tmpDir := t.TempDir()
-
-	// Change to temp directory for test
-	origDir, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(origDir)
+	testFilename := filepath.Join(tmpDir, "syncdoc.txt")
 
 	// First call should create the file
-	err := initializeSyncdocFile()
+	err := initializeSyncdocFile(testFilename)
 	if err != nil {
 		t.Fatalf("Failed to initialize syncdoc file: %v", err)
 	}
 
 	// Verify file exists
-	content, err := os.ReadFile(syncdocFileName)
+	content, err := os.ReadFile(testFilename)
 	if err != nil {
 		t.Fatalf("Failed to read created file: %v", err)
 	}
@@ -574,7 +570,7 @@ func TestInitializeSyncdocFile(t *testing.T) {
 	}
 
 	// Second call should use existing file without error
-	err = initializeSyncdocFile()
+	err = initializeSyncdocFile(testFilename)
 	if err != nil {
 		t.Errorf("Second call failed: %v", err)
 	}

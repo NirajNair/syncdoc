@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/signal"
@@ -62,10 +63,18 @@ func joinSession(code string) error {
 	q := wsURL.Query()
 	q.Set("token", token)
 	wsURL.RawQuery = q.Encode()
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+
+	log.Debug(fmt.Sprintf("WebSocket: Attempting to dial %s", wsURL.String()))
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
 	if err != nil {
+		log.Debug(fmt.Sprintf("WebSocket dial failed: %v", err))
+		if resp != nil {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 500))
+			log.Debug(fmt.Sprintf("HTTP response status: %d, body: %s", resp.StatusCode, string(body)))
+		}
 		return err
 	}
+	log.Debug("WebSocket dial succeeded after %v")
 	fmt.Println("Connected!!")
 
 	// 3. Start noise handshake for mutual auth
@@ -83,7 +92,7 @@ func joinSession(code string) error {
 	defer cancel()
 
 	// 4. Initialize syncdoc.txt
-	if err := initializeSyncdocFile(); err != nil {
+	if err := initializeSyncdocFile(syncdocFileName); err != nil {
 		return err
 	}
 

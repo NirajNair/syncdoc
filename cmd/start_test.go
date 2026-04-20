@@ -150,7 +150,7 @@ func (m *mockTunnel) Close() error {
 // mockServer implements transport.ServerInterface for testing
 type mockServer struct {
 	startFunc         func(ctx context.Context) (net.Listener, error)
-	createSessionFunc func() *transport.Session
+	createSessionFunc func(opts ...*transport.SessionOption) *transport.Session
 	connChan          chan *websocket.Conn
 	doneChan          chan struct{}
 	closeFunc         func()
@@ -164,9 +164,9 @@ func (m *mockServer) Start(ctx context.Context) (net.Listener, error) {
 	return m.listener, nil
 }
 
-func (m *mockServer) CreateSession() *transport.Session {
+func (m *mockServer) CreateSession(opts ...*transport.SessionOption) *transport.Session {
 	if m.createSessionFunc != nil {
-		return m.createSessionFunc()
+		return m.createSessionFunc(opts...)
 	}
 	return &transport.Session{
 		Token: "test-token-12345",
@@ -245,19 +245,17 @@ func TestInitializeSyncdocFile_New(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create temporary directory for test
 			tmpDir := t.TempDir()
-			oldFileName := syncdocFileName
-			syncdocFileName = filepath.Join(tmpDir, "test_syncdoc.txt")
-			defer func() { syncdocFileName = oldFileName }()
+			testFilename := filepath.Join(tmpDir, "test_syncdoc.txt")
 
 			// Setup: create file if needed
 			if tt.setupFile {
-				if err := os.WriteFile(syncdocFileName, []byte("existing content"), 0644); err != nil {
+				if err := os.WriteFile(testFilename, []byte("existing content"), 0644); err != nil {
 					t.Fatalf("Failed to setup test file: %v", err)
 				}
 			}
 
 			// Execute
-			err := initializeSyncdocFile()
+			err := initializeSyncdocFile(testFilename)
 
 			// Verify
 			if tt.wantErr && err == nil {
@@ -268,13 +266,13 @@ func TestInitializeSyncdocFile_New(t *testing.T) {
 			}
 
 			// Verify file exists
-			if _, err := os.Stat(syncdocFileName); os.IsNotExist(err) {
+			if _, err := os.Stat(testFilename); os.IsNotExist(err) {
 				t.Errorf("expected file to exist, but it doesn't")
 			}
 
 			// If new file, verify content
 			if !tt.setupFile {
-				content, err := os.ReadFile(syncdocFileName)
+				content, err := os.ReadFile(testFilename)
 				if err != nil {
 					t.Errorf("failed to read created file: %v", err)
 				}
@@ -292,18 +290,16 @@ func TestInitializeSyncdocFile_New(t *testing.T) {
 func TestInitializeSyncdocFile_Exists(t *testing.T) {
 	// Create temporary directory for test
 	tmpDir := t.TempDir()
-	oldFileName := syncdocFileName
-	syncdocFileName = filepath.Join(tmpDir, "test_syncdoc.txt")
-	defer func() { syncdocFileName = oldFileName }()
+	testFilename := filepath.Join(tmpDir, "test_syncdoc.txt")
 
 	// Setup: Create existing file with custom content
 	customContent := "This is existing content"
-	if err := os.WriteFile(syncdocFileName, []byte(customContent), 0644); err != nil {
+	if err := os.WriteFile(testFilename, []byte(customContent), 0644); err != nil {
 		t.Fatalf("Failed to setup test file: %v", err)
 	}
 
 	// Execute
-	err := initializeSyncdocFile()
+	err := initializeSyncdocFile(testFilename)
 
 	// Verify
 	if err != nil {
@@ -311,7 +307,7 @@ func TestInitializeSyncdocFile_Exists(t *testing.T) {
 	}
 
 	// Verify file still exists with original content
-	content, err := os.ReadFile(syncdocFileName)
+	content, err := os.ReadFile(testFilename)
 	if err != nil {
 		t.Fatalf("failed to read file: %v", err)
 	}
@@ -326,9 +322,7 @@ func TestInitializeSyncdocFile_Exists(t *testing.T) {
 func TestInitializeSyncdocFile_CreateError(t *testing.T) {
 	// Create temporary directory and make it read-only
 	tmpDir := t.TempDir()
-	oldFileName := syncdocFileName
-	syncdocFileName = filepath.Join(tmpDir, "readonly", "test_syncdoc.txt")
-	defer func() { syncdocFileName = oldFileName }()
+	testFilename := filepath.Join(tmpDir, "readonly", "test_syncdoc.txt")
 
 	// Create a read-only directory structure
 	readonlyDir := filepath.Join(tmpDir, "readonly")
@@ -338,7 +332,7 @@ func TestInitializeSyncdocFile_CreateError(t *testing.T) {
 	defer os.Chmod(readonlyDir, 0755) // Cleanup: restore permissions
 
 	// Execute - should fail due to permission denied
-	err := initializeSyncdocFile()
+	err := initializeSyncdocFile(testFilename)
 
 	// Verify error occurred
 	if err == nil {
@@ -563,9 +557,7 @@ func TestSetupFileWatcher(t *testing.T) {
 func TestIntegration_StartSession(t *testing.T) {
 	// Create temporary directory
 	tmpDir := t.TempDir()
-	oldFileName := syncdocFileName
-	syncdocFileName = filepath.Join(tmpDir, "test_syncdoc.txt")
-	defer func() { syncdocFileName = oldFileName }()
+	testFilename := filepath.Join(tmpDir, "test_syncdoc.txt")
 
 	// Create mock listener
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -603,7 +595,7 @@ func TestIntegration_StartSession(t *testing.T) {
 	}()
 
 	// Verify file doesn't exist before start
-	if _, err := os.Stat(syncdocFileName); !os.IsNotExist(err) {
+	if _, err := os.Stat(testFilename); !os.IsNotExist(err) {
 		t.Fatal("test file should not exist before start")
 	}
 
@@ -611,13 +603,13 @@ func TestIntegration_StartSession(t *testing.T) {
 	// Instead, we verify the individual components work together correctly.
 
 	// Verify initializeSyncdocFile works
-	err = initializeSyncdocFile()
+	err = initializeSyncdocFile(testFilename)
 	if err != nil {
 		t.Errorf("initializeSyncdocFile() error: %v", err)
 	}
 
 	// Verify file was created
-	if _, err := os.Stat(syncdocFileName); os.IsNotExist(err) {
+	if _, err := os.Stat(testFilename); os.IsNotExist(err) {
 		t.Error("file should exist after initializeSyncdocFile()")
 	}
 
@@ -633,12 +625,10 @@ func TestIntegration_StartSession(t *testing.T) {
 func TestIntegration_PeerJoin(t *testing.T) {
 	// Create temporary directory
 	tmpDir := t.TempDir()
-	oldFileName := syncdocFileName
-	syncdocFileName = filepath.Join(tmpDir, "test_syncdoc.txt")
-	defer func() { syncdocFileName = oldFileName }()
+	testFilename := filepath.Join(tmpDir, "test_syncdoc.txt")
 
 	// Initialize the file
-	if err := initializeSyncdocFile(); err != nil {
+	if err := initializeSyncdocFile(testFilename); err != nil {
 		t.Fatalf("Failed to initialize syncdoc file: %v", err)
 	}
 
@@ -1031,13 +1021,11 @@ func TestFactoryFunctionOverrides(t *testing.T) {
 func TestInitializeSyncdocFile_PermissionDenied(t *testing.T) {
 	// This test checks behavior when file creation fails due to permissions
 	tmpDir := t.TempDir()
-	oldFileName := syncdocFileName
 
 	// Create a subdirectory that doesn't exist to trigger an error
-	syncdocFileName = filepath.Join(tmpDir, "nonexistent", "subdir", "test.txt")
-	defer func() { syncdocFileName = oldFileName }()
+	testFilename := filepath.Join(tmpDir, "nonexistent", "subdir", "test.txt")
 
-	err := initializeSyncdocFile()
+	err := initializeSyncdocFile(testFilename)
 	if err == nil {
 		t.Error("expected error for non-existent directory path")
 	}
@@ -1045,18 +1033,16 @@ func TestInitializeSyncdocFile_PermissionDenied(t *testing.T) {
 
 func TestInitializeSyncdocFile_ReadAfterWrite(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldFileName := syncdocFileName
-	syncdocFileName = filepath.Join(tmpDir, "readwrite_test.txt")
-	defer func() { syncdocFileName = oldFileName }()
+	testFilename := filepath.Join(tmpDir, "readwrite_test.txt")
 
 	// Create the file
-	err := initializeSyncdocFile()
+	err := initializeSyncdocFile(testFilename)
 	if err != nil {
 		t.Fatalf("Failed to create file: %v", err)
 	}
 
 	// Read and verify content
-	content, err := os.ReadFile(syncdocFileName)
+	content, err := os.ReadFile(testFilename)
 	if err != nil {
 		t.Fatalf("Failed to read file: %v", err)
 	}
@@ -1066,13 +1052,13 @@ func TestInitializeSyncdocFile_ReadAfterWrite(t *testing.T) {
 	}
 
 	// Call again - should use existing
-	err = initializeSyncdocFile()
+	err = initializeSyncdocFile(testFilename)
 	if err != nil {
 		t.Errorf("Second call failed: %v", err)
 	}
 
 	// Verify content unchanged
-	content2, err := os.ReadFile(syncdocFileName)
+	content2, err := os.ReadFile(testFilename)
 	if err != nil {
 		t.Fatalf("Failed to read file: %v", err)
 	}

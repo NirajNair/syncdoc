@@ -15,6 +15,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const SessionTimeoutSec = 120
+
 type Server struct {
 	mu     sync.RWMutex
 	active bool
@@ -33,6 +35,10 @@ type Session struct {
 	expiresAt time.Time
 }
 
+type SessionOption struct {
+	timeout time.Duration
+}
+
 func NewServer(logger *logger.Logger) *Server {
 	return &Server{
 		active:   false,
@@ -43,14 +49,20 @@ func NewServer(logger *logger.Logger) *Server {
 	}
 }
 
-func (s *Server) CreateSession() *Session {
+func (s *Server) CreateSession(opts ...*SessionOption) *Session {
 	b := make([]byte, 16)
 	rand.Read(b)
 	token := base64.URLEncoding.EncodeToString(b)
+
+	timeout := SessionTimeoutSec * time.Second
+	if len(opts) > 0 && opts[0] != nil && opts[0].timeout > 0 {
+		timeout = opts[0].timeout
+	}
+
 	session := &Session{
 		Token:     token,
 		active:    false,
-		expiresAt: time.Now().Add(30 * time.Second),
+		expiresAt: time.Now().Add(timeout),
 	}
 
 	s.mu.Lock()

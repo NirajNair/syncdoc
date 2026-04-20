@@ -37,3 +37,5 @@ go.work.sum
 docs/
 build/
 .DS_Store
+
+syncdoc.txt

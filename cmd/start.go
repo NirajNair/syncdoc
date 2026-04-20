@@ -65,7 +65,7 @@ func startSession() error {
 	defer cancel()
 
 	// 1. Initialize syncdoc.txt
-	if err := initializeSyncdocFile(); err != nil {
+	if err := initializeSyncdocFile(syncdocFileName); err != nil {
 		return err
 	}
 
@@ -77,13 +77,16 @@ func startSession() error {
 
 	// 3. Start TCP server
 	server := newServerFunc(log)
+	log.Debug("Starting TCP server")
 	listener, err := server.Start(ctx)
 	if err != nil {
 		return err
 	}
+	log.Debug("TCP server started, listener ready")
 	port := transport.GetPort(listener)
 
 	// 4. Start Ngrok tunnel
+	log.Debug("Starting ngrok tunnel")
 	tunnel, err := startTunnelFunc(ctx, fmt.Sprintf("http://localhost:%d", port))
 	if err != nil {
 		return err
@@ -98,16 +101,17 @@ func startSession() error {
 	session := server.CreateSession()
 
 	code := base64.StdEncoding.EncodeToString([]byte(wsUrl + "||" + session.Token))
+	log.Debug("Joining code ready, client can now connect")
 	fmt.Printf("Please share this code to join the session:\n\n%s\n\n", code)
 
 	// 5. Wait for peer to connect with timeout and countdown
-	timer := time.NewTimer(peerConnectionTimeoutSec * time.Second)
+	timer := time.NewTimer(transport.SessionTimeoutSec * time.Second)
 	defer timer.Stop()
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	remaining := peerConnectionTimeoutSec
+	remaining := transport.SessionTimeoutSec
 
 	var conn *websocket.Conn
 	connChan := server.ConnChan()
@@ -128,7 +132,7 @@ waitLoop:
 		case <-timer.C:
 			// Timeout - clean up and exit
 			fmt.Printf("\r%s\r", strings.Repeat(" ", 50)) // Clear line
-			fmt.Printf("No peer connected within %ds.\n", peerConnectionTimeoutSec)
+			fmt.Printf("No peer connected within %ds.\n", transport.SessionTimeoutSec)
 
 			tunnel.Close()
 			log.Debug("Tunnel closed")
@@ -262,17 +266,17 @@ waitLoop:
 	return nil
 }
 
-func initializeSyncdocFile() error {
-	if _, err := os.Stat(syncdocFileName); err == nil {
-		fmt.Printf("Using existing %s\n", syncdocFileName)
+func initializeSyncdocFile(filename string) error {
+	if _, err := os.Stat(filename); err == nil {
+		fmt.Printf("Using existing %s\n", filename)
 		return nil
 	}
 
-	if err := os.WriteFile(syncdocFileName, []byte(document.DefaultTemplate), 0644); err != nil {
-		return fmt.Errorf("Error creating %s: %v", syncdocFileName, err.Error())
+	if err := os.WriteFile(filename, []byte(document.DefaultTemplate), 0644); err != nil {
+		return fmt.Errorf("Error creating %s: %v", filename, err.Error())
 	}
 
-	fmt.Printf("Created %s\n", syncdocFileName)
+	fmt.Printf("Created %s\n", filename)
 
 	return nil
 }

@@ -16,8 +16,8 @@ func (w *serverWrapper) Start(ctx context.Context) (net.Listener, error) {
 	return w.server.Start(ctx)
 }
 
-func (w *serverWrapper) CreateSession() *Session {
-	return w.server.CreateSession()
+func (w *serverWrapper) CreateSession(opts ...*SessionOption) *Session {
+	return w.server.CreateSession(opts...)
 }
 
 func (w *serverWrapper) ConnChan() <-chan *websocket.Conn {
