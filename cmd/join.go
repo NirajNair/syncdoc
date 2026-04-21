@@ -4,6 +4,7 @@ Copyright © 2026 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -50,6 +51,18 @@ func decodeJoiningCode(code string) (addr, token string, err error) {
 }
 
 func joinSession(code string) error {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Your local changes will be overwritten by the host's changes. Continue? (y/N): ")
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("Failed to read confirmation: %v", err)
+	}
+	response = strings.TrimSpace(strings.ToLower(response))
+	if response != "y" {
+		fmt.Println("Aborted.")
+		return nil
+	}
+
 	fmt.Println("Connecting...")
 
 	// 1. Decode the joining code
