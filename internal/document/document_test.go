@@ -9,7 +9,7 @@ import (
 
 func TestNewDocument(t *testing.T) {
 	log := logger.New(false)
-	doc, err := NewDocument(log)
+	doc, err := NewDocument(log, DefaultTemplate)
 	if err != nil {
 		t.Fatalf("NewDocument failed: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestNewDocument(t *testing.T) {
 
 func TestGetContent(t *testing.T) {
 	log := logger.New(false)
-	doc, _ := NewDocument(log)
+	doc, _ := NewDocument(log, DefaultTemplate)
 
 	content, err := doc.GetContent()
 	if err != nil {
@@ -40,7 +40,7 @@ func TestGetContent(t *testing.T) {
 
 func TestApplyLocalChange(t *testing.T) {
 	log := logger.New(false)
-	doc, _ := NewDocument(log)
+	doc, _ := NewDocument(log, DefaultTemplate)
 
 	// Apply a simple change
 	newContent := "Hello World"
@@ -73,14 +73,14 @@ func TestApplyLocalChange(t *testing.T) {
 func TestApplyRemoteChange(t *testing.T) {
 	log := logger.New(false)
 	// Create doc1 and apply a change
-	doc1, _ := NewDocument(log)
+	doc1, _ := NewDocument(log, DefaultTemplate)
 	newContent := "Hello from doc1"
 	update, _ := doc1.ApplyLocalChange(newContent)
 
 	t.Logf("Update from doc1: %v (len=%d)", update, len(update))
 
 	// Create doc2 starting with same template, then apply the update
-	doc2, _ := NewDocument(log)
+	doc2, _ := NewDocument(log, DefaultTemplate)
 
 	// Doc2 applies the change from doc1
 	receivedContent, err := doc2.ApplyRemoteChange(update)
@@ -110,8 +110,8 @@ func TestApplyRemoteChange(t *testing.T) {
 func TestBidirectionalSync(t *testing.T) {
 	log := logger.New(false)
 	// Create two documents
-	doc1, _ := NewDocument(log)
-	doc2, _ := NewDocument(log)
+	doc1, _ := NewDocument(log, DefaultTemplate)
+	doc2, _ := NewDocument(log, DefaultTemplate)
 
 	// Doc1 makes first change
 	content1 := "Hello World"
@@ -158,7 +158,7 @@ func TestBidirectionalSync(t *testing.T) {
 
 func TestMultipleLocalChanges(t *testing.T) {
 	log := logger.New(false)
-	doc, _ := NewDocument(log)
+	doc, _ := NewDocument(log, DefaultTemplate)
 
 	changes := []string{
 		"First change",
@@ -187,8 +187,8 @@ func TestMultipleLocalChanges(t *testing.T) {
 
 func TestRemoteChangeNoUpdate(t *testing.T) {
 	log := logger.New(false)
-	doc1, _ := NewDocument(log)
-	doc2, _ := NewDocument(log)
+	doc1, _ := NewDocument(log, DefaultTemplate)
+	doc2, _ := NewDocument(log, DefaultTemplate)
 
 	// Doc1 makes a change
 	content := "Test content"
@@ -212,7 +212,7 @@ func TestRemoteChangeNoUpdate(t *testing.T) {
 
 func TestUnicodeContent(t *testing.T) {
 	log := logger.New(false)
-	doc, _ := NewDocument(log)
+	doc, _ := NewDocument(log, DefaultTemplate)
 
 	unicodeContent := "Hello 世界! ñ émojis: 🎉🚀"
 	update, err := doc.ApplyLocalChange(unicodeContent)
@@ -232,7 +232,7 @@ func TestUnicodeContent(t *testing.T) {
 
 func TestEmptyContent(t *testing.T) {
 	log := logger.New(false)
-	doc, _ := NewDocument(log)
+	doc, _ := NewDocument(log, DefaultTemplate)
 
 	// Change to empty string
 	emptyContent := ""
@@ -253,8 +253,8 @@ func TestEmptyContent(t *testing.T) {
 
 func TestPartialUpdate(t *testing.T) {
 	log := logger.New(false)
-	doc1, _ := NewDocument(log)
-	doc2, _ := NewDocument(log)
+	doc1, _ := NewDocument(log, DefaultTemplate)
+	doc2, _ := NewDocument(log, DefaultTemplate)
 
 	// Initial content
 	initial := "Hello World"
@@ -294,8 +294,8 @@ func TestPartialUpdate(t *testing.T) {
 
 func TestConcurrentChanges(t *testing.T) {
 	log := logger.New(false)
-	doc1, _ := NewDocument(log)
-	doc2, _ := NewDocument(log)
+	doc1, _ := NewDocument(log, DefaultTemplate)
+	doc2, _ := NewDocument(log, DefaultTemplate)
 
 	// Both start with same content
 	baseContent := "Base content"
@@ -327,7 +327,7 @@ func TestConcurrentChanges(t *testing.T) {
 
 func TestQueueLocalChange(t *testing.T) {
 	log := logger.New(false)
-	doc, _ := NewDocument(log)
+	doc, _ := NewDocument(log, DefaultTemplate)
 
 	// Queue a simple function
 	called := false
@@ -344,7 +344,7 @@ func TestQueueLocalChange(t *testing.T) {
 
 func TestQueueFull(t *testing.T) {
 	log := logger.New(false)
-	doc, _ := NewDocument(log)
+	doc, _ := NewDocument(log, DefaultTemplate)
 
 	// Fill up the queue (capacity 10)
 	for i := 0; i < 15; i++ {

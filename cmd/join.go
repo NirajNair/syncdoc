@@ -96,8 +96,9 @@ func joinSession(code string) error {
 		return err
 	}
 
-	// 5. Create CRDT document
-	doc, err := document.NewDocument(log)
+	// 5. Create CRDT document with empty initial content
+	// The joiner starts blank and adopts the host's state via initial sync
+	doc, err := document.NewDocument(log, "")
 	if err != nil {
 		return err
 	}

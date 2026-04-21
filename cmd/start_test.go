@@ -196,8 +196,8 @@ func setupTestLogger() *logger.Logger {
 }
 
 func resetFactoryFunctions() {
-	newDocumentFunc = func(logger *logger.Logger) (document.DocumentInterface, error) {
-		doc, err := document.NewDocument(logger)
+	newDocumentFunc = func(logger *logger.Logger, initialContent string) (document.DocumentInterface, error) {
+		doc, err := document.NewDocument(logger, initialContent)
 		if err != nil {
 			return nil, err
 		}
@@ -959,11 +959,11 @@ func TestFactoryFunctionOverrides(t *testing.T) {
 	// Test each factory can be overridden
 	t.Run("override newDocumentFunc", func(t *testing.T) {
 		called := false
-		newDocumentFunc = func(*logger.Logger) (document.DocumentInterface, error) {
+		newDocumentFunc = func(*logger.Logger, string) (document.DocumentInterface, error) {
 			called = true
 			return &mockDocument{}, nil
 		}
-		_, _ = newDocumentFunc(nil)
+		_, _ = newDocumentFunc(nil, "")
 		if !called {
 			t.Error("newDocumentFunc was not called")
 		}

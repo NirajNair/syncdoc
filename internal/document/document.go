@@ -23,16 +23,18 @@ type Document struct {
 	logger           *logger.Logger
 }
 
-// Creates a new Document with initial content via a template
-func NewDocument(logger *logger.Logger) (*Document, error) {
+// Creates a new Document with the given initial content
+func NewDocument(logger *logger.Logger, initialContent string) (*Document, error) {
 	// Create doc with GC disabled to avoid nil pointer issues in transaction cleanup
 	doc := y.NewDoc(generateGUID(), false, nil, nil, false)
 	ytext := doc.GetText("content")
 
 	// Insert initial content via transaction (YText has no Set method)
-	doc.Transact(func(trans *y.Transaction) {
-		ytext.Insert(0, DefaultTemplate, nil)
-	}, nil)
+	if initialContent != "" {
+		doc.Transact(func(trans *y.Transaction) {
+			ytext.Insert(0, initialContent, nil)
+		}, nil)
+	}
 
 	// Initialize state vector for tracking incremental updates
 	stateVector := y.EncodeStateVector(doc, nil, y.NewUpdateEncoderV1())
@@ -40,7 +42,7 @@ func NewDocument(logger *logger.Logger) (*Document, error) {
 	return &Document{
 		doc:              doc,
 		ytext:            ytext,
-		lastKnownContent: DefaultTemplate,
+		lastKnownContent: initialContent,
 		pendingChanges:   make(chan func(), 10),
 		lastStateVector:  stateVector,
 		logger:           logger,

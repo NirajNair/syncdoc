@@ -26,8 +26,8 @@ import (
 
 // factory functions for dependency injection (overridable in tests)
 var (
-	newDocumentFunc = func(logger *logger.Logger) (document.DocumentInterface, error) {
-		doc, err := document.NewDocument(logger)
+	newDocumentFunc = func(logger *logger.Logger, initialContent string) (document.DocumentInterface, error) {
+		doc, err := document.NewDocument(logger, initialContent)
 		if err != nil {
 			return nil, err
 		}
@@ -69,8 +69,14 @@ func startSession() error {
 		return err
 	}
 
-	// 2. Create CRDT document
-	doc, err := newDocumentFunc(log)
+	// Read the file content to seed the CRDT with the host's actual document state
+	fileContent, err := os.ReadFile(syncdocFileName)
+	if err != nil {
+		return fmt.Errorf("Error reading %s: %v", syncdocFileName, err.Error())
+	}
+
+	// 2. Create CRDT document seeded with host's file content
+	doc, err := newDocumentFunc(log, string(fileContent))
 	if err != nil {
 		return err
 	}
