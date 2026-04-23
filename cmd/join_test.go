@@ -199,8 +199,8 @@ func TestDecodeJoiningCode_Empty(t *testing.T) {
 func TestDialWebSocket_Success(t *testing.T) {
 	// Create a server that accepts WebSocket connections with token validation
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check token parameter
-		token := r.URL.Query().Get("token")
+		// Check token from Authorization header
+		token := r.Header.Get("Authorization")
 		if token != "valid-token" {
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -223,13 +223,12 @@ func TestDialWebSocket_Success(t *testing.T) {
 		t.Fatalf("Failed to parse URL: %v", err)
 	}
 
-	// Add token query parameter
-	q := wsURL.Query()
-	q.Set("token", "valid-token")
-	wsURL.RawQuery = q.Encode()
+	// Add token in Authorization header
+	header := http.Header{}
+	header.Set("Authorization", "valid-token")
 
 	// Attempt to connect
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), header)
 	if err != nil {
 		t.Fatalf("Failed to dial WebSocket: %v", err)
 	}
@@ -280,7 +279,7 @@ func TestDialWebSocket_ConnectionRefused(t *testing.T) {
 // TestDialWebSocket_InvalidToken tests that an invalid token is rejected.
 func TestDialWebSocket_InvalidToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.URL.Query().Get("token")
+		token := r.Header.Get("Authorization")
 		if token != "valid-token" {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Invalid token"))
@@ -295,9 +294,11 @@ func TestDialWebSocket_InvalidToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	wsURL := strings.Replace(server.URL, "http://", "ws://", 1) + "/ws?token=invalid-token"
+	wsURL := strings.Replace(server.URL, "http://", "ws://", 1) + "/ws"
+	header := http.Header{}
+	header.Set("Authorization", "invalid-token")
 
-	_, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	_, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
 	if err == nil {
 		t.Error("Expected error for invalid token, got nil")
 	}
@@ -380,11 +381,10 @@ func TestE2E_StartAndJoin(t *testing.T) {
 			t.Errorf("Failed to parse URL: %v", err)
 			return
 		}
-		q := peerWSURL.Query()
-		q.Set("token", token)
-		peerWSURL.RawQuery = q.Encode()
+		header := http.Header{}
+		header.Set("Authorization", token)
 
-		conn, _, err := websocket.DefaultDialer.Dial(peerWSURL.String(), nil)
+		conn, _, err := websocket.DefaultDialer.Dial(peerWSURL.String(), header)
 		if err != nil {
 			t.Errorf("Failed to dial WebSocket: %v", err)
 			return

@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -71,14 +72,13 @@ func joinSession(code string) error {
 		return err
 	}
 
-	// 2. Dial WebSocket connection with URL-encoded token
+	// 2. Dial WebSocket connection with token in Authorization header
 	wsURL, _ := url.Parse(addr + "/ws")
-	q := wsURL.Query()
-	q.Set("token", token)
-	wsURL.RawQuery = q.Encode()
+	header := http.Header{}
+	header.Set("Authorization", token)
 
 	log.Debug(fmt.Sprintf("WebSocket: Attempting to dial %s", wsURL.String()))
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), header)
 	if err != nil {
 		log.Debug(fmt.Sprintf("WebSocket dial failed: %v", err))
 		if resp != nil {

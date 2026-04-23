@@ -119,7 +119,7 @@ func (s *Server) Start(ctx context.Context) (net.Listener, error) {
 }
 
 func (s *Server) handleWSConn(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if err := s.validateConnRequest(token); err != nil {
 		s.logger.Debug(err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)

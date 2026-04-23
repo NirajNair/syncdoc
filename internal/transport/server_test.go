@@ -359,10 +359,11 @@ func TestHandleWSConn_ValidToken(t *testing.T) {
 
 	port := GetPort(listener)
 	wsURL := url.URL{Scheme: "ws", Host: fmt.Sprintf("localhost:%d", port), Path: "/ws"}
-	wsURL.RawQuery = "token=" + session.Token
+	header := http.Header{}
+	header.Set("Authorization", session.Token)
 
 	// Connect with valid token
-	ws, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	ws, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), header)
 	if err != nil {
 		t.Fatalf("Failed to connect with valid token: %v", err)
 	}
@@ -406,10 +407,11 @@ func TestHandleWSConn_ExpiredSession(t *testing.T) {
 
 	port := GetPort(listener)
 	wsURL := url.URL{Scheme: "ws", Host: fmt.Sprintf("localhost:%d", port), Path: "/ws"}
-	wsURL.RawQuery = "token=expired-token"
+	header := http.Header{}
+	header.Set("Authorization", "expired-token")
 
 	// Try to connect with expired token
-	_, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	_, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), header)
 	if err == nil {
 		t.Error("Expected error when connecting with expired token")
 		return
@@ -443,10 +445,11 @@ func TestHandleWSConn_ActiveSession(t *testing.T) {
 
 	port := GetPort(listener)
 	wsURL := url.URL{Scheme: "ws", Host: fmt.Sprintf("localhost:%d", port), Path: "/ws"}
-	wsURL.RawQuery = "token=active-token"
+	header := http.Header{}
+	header.Set("Authorization", "active-token")
 
 	// Try to connect to already active session
-	_, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	_, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), header)
 	if err == nil {
 		t.Error("Expected error when connecting to active session")
 		return
@@ -473,10 +476,11 @@ func TestHandleWSConn_WebSocketUpgrade(t *testing.T) {
 
 	port := GetPort(listener)
 	wsURL := url.URL{Scheme: "ws", Host: fmt.Sprintf("localhost:%d", port), Path: "/ws"}
-	wsURL.RawQuery = "token=" + session.Token
+	header := http.Header{}
+	header.Set("Authorization", session.Token)
 
 	// Connect using default dialer - it handles WebSocket headers internally
-	ws, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+	ws, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), header)
 	if err != nil {
 		t.Fatalf("WebSocket upgrade failed: %v", err)
 	}
@@ -533,9 +537,10 @@ func TestServer_MultipleConnections(t *testing.T) {
 	connections := make([]*websocket.Conn, 3)
 	for i, session := range sessions {
 		wsURL := url.URL{Scheme: "ws", Host: fmt.Sprintf("localhost:%d", port), Path: "/ws"}
-		wsURL.RawQuery = "token=" + session.Token
+		header := http.Header{}
+		header.Set("Authorization", session.Token)
 
-		ws, _, err := websocket.DefaultDialer.Dial(wsURL.String(), nil)
+		ws, _, err := websocket.DefaultDialer.Dial(wsURL.String(), header)
 		if err != nil {
 			t.Fatalf("Failed to connect session %d: %v", i, err)
 		}
