@@ -24,12 +24,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var joinCode string
+
 // joinCmd represents the join command
 var joinCmd = &cobra.Command{
 	Use:   "join",
 	Short: "Join a syncdoc session",
+	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		err := joinSession(args[0])
+		err := joinSession(joinCode)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -199,4 +202,6 @@ func joinSession(code string) error {
 
 func init() {
 	rootCmd.AddCommand(joinCmd)
+	joinCmd.Flags().StringVarP(&joinCode, "code", "c", "", "The joining code shared by the host")
+	joinCmd.MarkFlagRequired("code")
 }

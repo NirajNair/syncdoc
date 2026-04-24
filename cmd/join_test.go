@@ -641,3 +641,45 @@ func TestDecodeJoiningCode_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// TestJoinCmd_CodeFlag tests that the --code flag is properly registered
+func TestJoinCmd_CodeFlag(t *testing.T) {
+	// Test that the code flag is registered
+	flag := joinCmd.Flags().Lookup("code")
+	if flag == nil {
+		t.Fatal("Expected --code flag to be registered on joinCmd")
+	}
+
+	// Test shorthand
+	if flag.Shorthand != "c" {
+		t.Errorf("Expected shorthand 'c', got %q", flag.Shorthand)
+	}
+
+	// Test that -c shorthand exists and points to "code"
+	shortFlag := joinCmd.Flags().ShorthandLookup("c")
+	if shortFlag == nil {
+		t.Fatal("Expected -c shorthand to be registered on joinCmd")
+	}
+	if shortFlag.Name != "code" {
+		t.Errorf("Expected -c shorthand to point to 'code', got %q", shortFlag.Name)
+	}
+
+	// Test that --code flag is marked as required (Cobra marks required flags via annotations)
+	annotations := flag.Annotations
+	if annotations == nil || annotations["cobra_annotation_bash_completion_one_required_flag"] == nil {
+		t.Error("Expected --code flag to be marked as required")
+	}
+}
+
+// TestJoinCmd_NoArgs tests that the join command rejects positional arguments
+func TestJoinCmd_NoArgs(t *testing.T) {
+	if joinCmd.Args == nil {
+		t.Error("Expected joinCmd.Args to be set (cobra.NoArgs)")
+	}
+
+	// Test that providing args returns an error
+	err := joinCmd.Args(joinCmd, []string{"some-arg"})
+	if err == nil {
+		t.Error("Expected NoArgs to reject positional arguments")
+	}
+}
