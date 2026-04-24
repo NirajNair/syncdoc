@@ -38,6 +38,7 @@ var debugFlag bool
 var log *logger.Logger
 
 func init() {
+	rootCmd.Version = version
 	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Show verbose debug output")
 
 	// This runs before ANY subcommand's Run function

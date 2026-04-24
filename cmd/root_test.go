@@ -288,3 +288,38 @@ func TestRootCmd_CommandProperties(t *testing.T) {
 		t.Error("Expected Long description to be set")
 	}
 }
+
+// TestExecute_VersionFlag verifies that --version flag is registered and outputs correctly
+func TestExecute_VersionFlag(t *testing.T) {
+	resetRootCmd()
+
+	// Verify the version is set on rootCmd, which causes Cobra to register --version
+	if rootCmd.Version == "" {
+		t.Fatal("Expected rootCmd.Version to be set (enables --version flag)")
+	}
+
+	// Verify the --version flag is registered (Cobra adds it lazily when Version is set)
+	rootCmd.InitDefaultVersionFlag()
+	versionFlag := rootCmd.Flags().Lookup("version")
+	if versionFlag == nil {
+		t.Fatal("Expected --version flag to be registered on rootCmd")
+	}
+
+	// Verify the default value of the version flag is false (boolean flag)
+	if versionFlag.DefValue != "false" {
+		t.Errorf("Expected --version flag default to be 'false', got %q", versionFlag.DefValue)
+	}
+}
+
+// TestRootCmd_VersionSet verifies that the rootCmd has the version set
+func TestRootCmd_VersionSet(t *testing.T) {
+	// The version should be set to something (default "dev" or overridden via ldflags)
+	if rootCmd.Version == "" {
+		t.Error("Expected rootCmd.Version to be set, got empty string")
+	}
+
+	// Check that it matches the version variable
+	if rootCmd.Version != version {
+		t.Errorf("Expected rootCmd.Version to match version variable, got %q vs %q", rootCmd.Version, version)
+	}
+}

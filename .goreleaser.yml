@@ -17,7 +17,7 @@ builds:
     main: .
     binary: syncdoc
     ldflags:
-      - -s -w
+      - -s -w -X github.com/NirajNair/syncdoc/cmd.version={{.Version}}
 
 archives:
   - formats: ["tar.gz"]
