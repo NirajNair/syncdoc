@@ -42,7 +42,7 @@ func TestExecute_NoArgs(t *testing.T) {
 		t.Error("Expected output to contain 'syncdoc'")
 	}
 	// Root command without subcommands shows Long description
-	if !strings.Contains(output, "Usage:") && !strings.Contains(output, "peer-to-peer") {
+	if !strings.Contains(output, "Usage:") && !strings.Contains(output, "real-time") {
 		t.Error("Expected output to contain either 'Usage:' or application description")
 	}
 }

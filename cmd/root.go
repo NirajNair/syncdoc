@@ -13,13 +13,13 @@ import (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "syncdoc",
-	Short: "syncdoc - A secure P2P real-time document synchronization tool",
-	Long: `syncdoc is a peer-to-peer real-time document synchronization tool that enables
-		real-time collaboration between two peers without requiring a central server.
-		Features:
-		- End-to-end encryption using Noise Protocol XX handshake
-		- Conflict-free synchronization using CRDT
-		- Simple peer-to-peer architecture via WebSocket over ngrok tunnel`,
+	Short: "syncdoc - A secure real-time document synchronization tool",
+	Long: `syncdoc is a real-time document synchronization tool that enables encrypted,
+conflict-free collaboration between two machines over an ngrok tunnel.
+Features:
+- End-to-end encryption using Noise Protocol XX handshake
+- Conflict-free synchronization using CRDT
+- Host a session via ngrok tunnel, peer joins with a code`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	// Run: func(cmd *cobra.Command, args []string) { },
