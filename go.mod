@@ -3,6 +3,7 @@ module github.com/NirajNair/syncdoc
 go 1.25.7
 
 require (
+	github.com/flynn/noise v1.1.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/sergi/go-diff v1.4.0
@@ -13,7 +14,6 @@ require (
 )
 
 require (
-	github.com/flynn/noise v1.1.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect

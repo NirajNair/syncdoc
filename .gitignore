@@ -39,3 +39,6 @@ build/
 .DS_Store
 
 syncdoc.txt
+
+# GoReleaser
+dist/
