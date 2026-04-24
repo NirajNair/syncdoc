@@ -67,7 +67,7 @@ Send the code to your peer over any channel — it contains the address and sess
 The other person joins using that code:
 
 ```sh
-syncdoc join d3NzOi8vYWJjMTIzLmduZ3Jvay5pbwonVGhpcyBpcyBhIHRva2Vu
+syncdoc join --code d3NzOi8vYWJjMTIzLmduZ3Jvay5pbwonVGhpcyBpcyBhIHRva2Vu
 ```
 
 Once connected, both sides edit `syncdoc.txt` in the current directory. Changes sync in real-time — save your file and the other side updates instantly.
@@ -78,7 +78,7 @@ Once connected, both sides edit `syncdoc.txt` in the current directory. Changes 
 
 Start a sync session as a host. Creates `syncdoc.txt` if it doesn't exist, opens an ngrok tunnel, and prints a joining code for your peer.
 
-### `syncdoc join <code>`
+### `syncdoc join --code <code>`
 
 Join an existing session using the code from the host. Overwrites local `syncdoc.txt` with the host's content, then syncs bidirectionally.
 
@@ -94,6 +94,7 @@ Save your ngrok authentication token. Required before running `syncdoc start`.
 
 | Flag | Description |
 |------|-------------|
+| `--version` | Show current version |
 | `--debug` | Show verbose debug output |
 
 ## Requirements
@@ -147,7 +148,7 @@ Run any command with `--debug`:
 
 ```sh
 syncdoc start --debug
-syncdoc join <code> --debug
+syncdoc join --code <code> --debug
 ```
 
 **How do I report a bug or request a feature?**
