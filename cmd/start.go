@@ -172,6 +172,10 @@ waitLoop:
 	}
 	fmt.Println("Secure connection established")
 
+	// syncWriteMu serializes doc operations followed by network/file writes
+	// to prevent interleaving between the watcher goroutine and reader goroutine
+	var syncWriteMu sync.Mutex
+
 	// 6. Start file watcher
 	w, err := newWatcherFunc(log)
 	if err != nil {
@@ -181,6 +185,9 @@ waitLoop:
 
 	// 6. Setup file change handler
 	w.Watch(syncdocFileName, func(data []byte) {
+		syncWriteMu.Lock()
+		defer syncWriteMu.Unlock()
+
 		syncData, err := doc.ApplyLocalChange(string(data))
 		if err != nil {
 			log.Debug("Error applying local change", "error", err)
@@ -215,18 +222,22 @@ waitLoop:
 						}
 						return
 					}
-					newContent, err := doc.ApplyRemoteChange(syncData)
-					if err != nil {
-						log.Debug("Error applying remote change", "error", err)
-						continue
-					}
-					if newContent != nil {
-						if err := w.WriteRemote([]byte(*newContent)); err != nil {
-							log.Debug("Error writing remote changes", "error", err)
-						} else {
-							fmt.Println("Remote change applied to file")
+					func() {
+						syncWriteMu.Lock()
+						defer syncWriteMu.Unlock()
+						newContent, err := doc.ApplyRemoteChange(syncData)
+						if err != nil {
+							log.Debug("Error applying remote change", "error", err)
+							return
 						}
-					}
+						if newContent != nil {
+							if err := w.WriteRemote([]byte(*newContent)); err != nil {
+								log.Debug("Error writing remote changes", "error", err)
+							} else {
+								fmt.Println("Remote change applied to file")
+							}
+						}
+					}()
 				}
 			}
 		},
@@ -234,6 +245,8 @@ waitLoop:
 
 	// 8. Send initial sync to peer (as CRDT update, not raw text)
 	go func() {
+		syncWriteMu.Lock()
+		defer syncWriteMu.Unlock()
 		// Generate full CRDT update for initial state
 		// Use nil state vector to get complete document state
 		syncData := doc.GenerateFullUpdate()

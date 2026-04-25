@@ -2,6 +2,7 @@ package document
 
 import (
 	"fmt"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/NirajNair/syncdoc/internal/logger"
@@ -15,6 +16,7 @@ Type away and save the file to watch the magic happen...
 
 // Document manages the CRDT state and sync logic
 type Document struct {
+	mu               sync.Mutex
 	doc              *y.Doc
 	ytext            *y.YText
 	lastKnownContent string
@@ -49,14 +51,22 @@ func NewDocument(logger *logger.Logger, initialContent string) (*Document, error
 	}, nil
 }
 
+func (d *Document) getContentLocked() string {
+	return d.ytext.ToString()
+}
+
 // Returns current text content from CRDT
 func (d *Document) GetContent() (string, error) {
-	return d.ytext.ToString(), nil
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.getContentLocked(), nil
 }
 
 // Creates a complete CRDT update of current document state.
 // Used for initial sync to avoid the lastKnownContent check in ApplyLocalChange
 func (d *Document) GenerateFullUpdate() []byte {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	// Generate full document update (nil state vector = all changes)
 	update := y.EncodeStateAsUpdate(d.doc, nil)
 	return update
@@ -65,6 +75,8 @@ func (d *Document) GenerateFullUpdate() []byte {
 // Applies local file changes to CRDT after diffings.
 // Returns sync data to send (nil if no changes)
 func (d *Document) ApplyLocalChange(newContent string) ([]byte, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if newContent == d.lastKnownContent {
 		return nil, nil
 	}
@@ -100,6 +112,8 @@ func (d *Document) ApplyLocalChange(newContent string) ([]byte, error) {
 // Returns pointer to new content to write to file (nil if no change needed)
 // Returns nil pointer if content hasn't changed, returns pointer to empty string if content became empty
 func (d *Document) ApplyRemoteChange(syncData []byte) (*string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if len(syncData) == 0 {
 		return nil, nil
 	}
@@ -109,10 +123,7 @@ func (d *Document) ApplyRemoteChange(syncData []byte) (*string, error) {
 		y.ApplyUpdate(d.doc, syncData, nil)
 	}, nil)
 
-	newContent, err := d.GetContent()
-	if err != nil {
-		return nil, fmt.Errorf("Error getting content after remote changes: %w", err)
-	}
+	newContent := d.getContentLocked()
 
 	// Only return content if it actually changed from what we last sent to remote
 	if newContent == d.lastKnownContent {

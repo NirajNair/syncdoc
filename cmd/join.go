@@ -119,6 +119,10 @@ func joinSession(code string) error {
 		return err
 	}
 
+	// syncWriteMu serializes doc operations followed by network/file writes
+	// to prevent interleaving between the watcher goroutine and reader goroutine
+	var syncWriteMu sync.Mutex
+
 	// 6. Start file watcher
 	w, err := watcher.NewWatcher(log)
 	if err != nil {
@@ -128,6 +132,9 @@ func joinSession(code string) error {
 
 	// 7. Setup file change handler
 	w.Watch(syncdocFileName, func(data []byte) {
+		syncWriteMu.Lock()
+		defer syncWriteMu.Unlock()
+
 		syncData, err := doc.ApplyLocalChange(string(data))
 		if err != nil {
 			log.Debug("Error applying local change", "error", err)
@@ -162,18 +169,22 @@ func joinSession(code string) error {
 						}
 						return
 					}
-					newContent, err := doc.ApplyRemoteChange(syncData)
-					if err != nil {
-						log.Debug("Error applying remote change", "error", err)
-						continue
-					}
-					if newContent != nil {
-						if err := w.WriteRemote([]byte(*newContent)); err != nil {
-							log.Debug("Error writing remote changes", "error", err)
-						} else {
-							fmt.Println("Remote change applied to file")
+					func() {
+						syncWriteMu.Lock()
+						defer syncWriteMu.Unlock()
+						newContent, err := doc.ApplyRemoteChange(syncData)
+						if err != nil {
+							log.Debug("Error applying remote change", "error", err)
+							return
 						}
-					}
+						if newContent != nil {
+							if err := w.WriteRemote([]byte(*newContent)); err != nil {
+								log.Debug("Error writing remote changes", "error", err)
+							} else {
+								fmt.Println("Remote change applied to file")
+							}
+						}
+					}()
 				}
 			}
 		},

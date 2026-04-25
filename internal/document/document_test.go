@@ -2,6 +2,7 @@ package document
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/NirajNair/syncdoc/internal/logger"
@@ -323,6 +324,143 @@ func TestConcurrentChanges(t *testing.T) {
 
 	// Note: With Y-crdt, both should converge to the same content
 	// The exact merged content depends on the CRDT algorithm
+}
+
+func TestConcurrentSamePositionEditsConverge(t *testing.T) {
+	log := logger.New(false)
+
+	// Simulate the exact start/join flow:
+	// 1. Host creates doc with initial content
+	// 2. Join receives initial sync
+	// 3. Both make concurrent edits at the SAME position
+	// 4. Both exchange updates
+	// 5. Both must converge to the same content
+
+	t.Run("host joins then concurrent same-position insert", func(t *testing.T) {
+		// Step 1: Host creates doc with content
+		host, _ := NewDocument(log, "Hello")
+
+		// Step 2: Join creates empty doc, receives initial sync
+		join, _ := NewDocument(log, "")
+		initialSync := host.GenerateFullUpdate()
+		join.ApplyRemoteChange(initialSync)
+
+		// Verify both have "Hello"
+		hostContent, _ := host.GetContent()
+		joinContent, _ := join.GetContent()
+		if hostContent != joinContent {
+			t.Fatalf("after initial sync: host=%q, join=%q", hostContent, joinContent)
+		}
+
+		// Step 3: Both make concurrent edits at the same position (end of "Hello")
+		// Host inserts "A" at position 5
+		hostUpdate, _ := host.ApplyLocalChange("HelloA")
+		// Join inserts "B" at position 5
+		joinUpdate, _ := join.ApplyLocalChange("HelloB")
+
+		// Step 4: Exchange updates (simulating simultaneous send)
+		join.ApplyRemoteChange(hostUpdate)
+		host.ApplyRemoteChange(joinUpdate)
+
+		// Step 5: Both must converge to identical content
+		hostResult, _ := host.GetContent()
+		joinResult, _ := join.GetContent()
+
+		if hostResult != joinResult {
+			t.Errorf("documents diverged after concurrent same-position edits:\n  host=%q\n  join=%q", hostResult, joinResult)
+		}
+
+		// Both characters must be present in the merged result
+		if !strings.Contains(hostResult, "A") || !strings.Contains(hostResult, "B") {
+			t.Errorf("merged result missing one of the concurrent characters: %q", hostResult)
+		}
+	})
+
+	t.Run("concurrent same-position delete and insert", func(t *testing.T) {
+		host, _ := NewDocument(log, "Hello World")
+		join, _ := NewDocument(log, "")
+		initialSync := host.GenerateFullUpdate()
+		join.ApplyRemoteChange(initialSync)
+
+		// Host deletes "World" (replaces entire string)
+		hostUpdate, _ := host.ApplyLocalChange("Hello ")
+		// Join modifies "World" to "World!" at same position
+		joinUpdate, _ := join.ApplyLocalChange("Hello World!")
+
+		// Exchange
+		join.ApplyRemoteChange(hostUpdate)
+		host.ApplyRemoteChange(joinUpdate)
+
+		hostResult, _ := host.GetContent()
+		joinResult, _ := join.GetContent()
+
+		if hostResult != joinResult {
+			t.Errorf("documents diverged after concurrent delete+insert:\n  host=%q\n  join=%q", hostResult, joinResult)
+		}
+	})
+
+	t.Run("concurrent middle-of-line edits", func(t *testing.T) {
+		host, _ := NewDocument(log, "The quick brown fox")
+		join, _ := NewDocument(log, "")
+		initialSync := host.GenerateFullUpdate()
+		join.ApplyRemoteChange(initialSync)
+
+		// Host inserts "lazy " before "brown" (position 10)
+		hostUpdate, _ := host.ApplyLocalChange("The quick lazy brown fox")
+		// Join capitalizes "brown" to "Brown"  at same area
+		joinUpdate, _ := join.ApplyLocalChange("The quick Brown fox")
+
+		join.ApplyRemoteChange(hostUpdate)
+		host.ApplyRemoteChange(joinUpdate)
+
+		hostResult, _ := host.GetContent()
+		joinResult, _ := join.GetContent()
+
+		if hostResult != joinResult {
+			t.Errorf("documents diverged after concurrent middle edits:\n  host=%q\n  join=%q", hostResult, joinResult)
+		}
+	})
+
+	t.Run("parallel goroutines calling ApplyLocalChange and ApplyRemoteChange", func(t *testing.T) {
+		host, _ := NewDocument(log, "Line 1\nLine 2\nLine 3")
+		join, _ := NewDocument(log, "")
+		initialSync := host.GenerateFullUpdate()
+		join.ApplyRemoteChange(initialSync)
+
+		// Use goroutines to simulate real concurrent access
+		var wg sync.WaitGroup
+		var hostUpdate, joinUpdate []byte
+
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			hostUpdate, _ = host.ApplyLocalChange("Line 1\nLine 2 modified\nLine 3")
+		}()
+		go func() {
+			defer wg.Done()
+			joinUpdate, _ = join.ApplyLocalChange("Line 1\nLine 2\nLine 3 extra")
+		}()
+		wg.Wait()
+
+		// Exchange updates
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			host.ApplyRemoteChange(joinUpdate)
+		}()
+		go func() {
+			defer wg.Done()
+			join.ApplyRemoteChange(hostUpdate)
+		}()
+		wg.Wait()
+
+		hostResult, _ := host.GetContent()
+		joinResult, _ := join.GetContent()
+
+		if hostResult != joinResult {
+			t.Errorf("documents diverged after parallel goroutine access:\n  host=%q\n  join=%q", hostResult, joinResult)
+		}
+	})
 }
 
 func TestQueueLocalChange(t *testing.T) {
